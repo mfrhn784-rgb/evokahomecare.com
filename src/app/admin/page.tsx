@@ -294,13 +294,41 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteProduct = async (id: string) => {
-    if (!window.confirm("Remove this product from the store?")) return;
+  const handleDeleteProduct = async (id: string, name?: string) => {
+    if (!window.confirm(`Remove ${name ? `"${name}"` : "this product"} from the store?`)) return;
     const res = await fetch(`/api/products?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     if (res.ok) {
       const data = await res.json();
       setProducts(data.products);
       setStatusMsg("Product removed.");
+    } else {
+      setStatusMsg("Could not remove product.");
+    }
+  };
+
+  const handleDeleteVariant = async (product: Product, variantId: string) => {
+    const target = product.variants.find((v) => v.id === variantId);
+    if (!target) return;
+    if (product.variants.length <= 1) {
+      await handleDeleteProduct(product.id, product.name);
+      return;
+    }
+    if (!window.confirm(`Remove "${target.label}" from "${product.name}"?`)) return;
+    const updated: Product = {
+      ...product,
+      variants: product.variants.filter((v) => v.id !== variantId),
+    };
+    const res = await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setProducts(data.products);
+      setStatusMsg(`Removed ${target.label} from ${product.name}.`);
+    } else {
+      setStatusMsg("Could not remove pack variant.");
     }
   };
 
@@ -814,7 +842,7 @@ export default function AdminPage() {
                     <th className="py-3 px-4 w-28">Selling Price (₹)</th>
                     <th className="py-3 px-4 w-28">MRP (₹)</th>
                     <th className="py-3 px-4 w-24">Stock</th>
-                    <th className="py-3 px-4 text-center w-28">Save Row</th>
+                    <th className="py-3 px-4 text-center w-36">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-sand">
@@ -908,13 +936,27 @@ export default function AdminPage() {
                             />
                           </td>
                           <td className="py-3 px-4 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleSaveSingleVariantRate(product, variant.id)}
-                              className="px-3 py-1 rounded-xl bg-oat border border-sand text-charcoal text-[11px] font-semibold hover:bg-sage hover:text-cream cursor-pointer transition-colors"
-                            >
-                              Save
-                            </button>
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveSingleVariantRate(product, variant.id)}
+                                className="px-3 py-1 rounded-xl bg-oat border border-sand text-charcoal text-[11px] font-semibold hover:bg-sage hover:text-cream cursor-pointer transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteVariant(product, variant.id)}
+                                className="p-1.5 rounded-xl bg-white border border-sand text-muted hover:text-crimson hover:border-crimson cursor-pointer transition-colors"
+                                title={
+                                  product.variants.length <= 1
+                                    ? `Remove product ${product.name}`
+                                    : `Remove ${variant.label}`
+                                }
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1486,11 +1528,12 @@ export default function AdminPage() {
                     </label>
                     <button
                       type="button"
-                      onClick={() => handleDeleteProduct(p.id)}
-                      className="p-2 text-muted hover:text-crimson cursor-pointer"
-                      title="Delete product"
+                      onClick={() => handleDeleteProduct(p.id, p.name)}
+                      className="px-3 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-700 hover:bg-red-600 hover:text-white text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                      title="Remove product from store"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove</span>
                     </button>
                   </div>
                 </div>
@@ -1539,6 +1582,14 @@ export default function AdminPage() {
                         className="px-1.5 py-0.5 rounded bg-white border border-sand hover:border-sage cursor-pointer"
                       >
                         +10
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteVariant(p, v.id)}
+                        className="ml-1 p-1 rounded text-muted hover:text-crimson cursor-pointer"
+                        title={`Remove ${v.label}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}

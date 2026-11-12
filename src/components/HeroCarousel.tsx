@@ -55,10 +55,10 @@ const SLIDES: Slide[] = [
     title: "Sparkling Dishes &\nFresh Floors",
     subtitle:
       "Lemon, orange & green apple dish wash liquids paired with rose, lavender & jasmine floor cleaners.",
-    ctaLabel: "Shop Dish Wash",
-    ctaHref: "/shop?category=dish-wash",
-    secondaryLabel: "Shop Floor Cleaners",
-    secondaryHref: "/shop?category=floor-cleaners",
+    ctaLabel: "Shop Kitchen Care",
+    ctaHref: "/shop?category=kitchen-care",
+    secondaryLabel: "Shop Floor & Surface",
+    secondaryHref: "/shop?category=floor-surface-care",
     bgClass: "from-[#1A3F32] via-[#225442] to-[#123025]",
     accentText: "text-[#F4C430]",
     images: [

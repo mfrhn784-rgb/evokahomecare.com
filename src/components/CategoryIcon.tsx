@@ -8,6 +8,7 @@ export function CategoryIcon({
   className?: string;
 }) {
   switch (slug) {
+    case "laundry-care":
     case "laundry-detergents":
       return (
         <svg viewBox="0 0 48 48" fill="none" className={className} aria-hidden="true">
@@ -47,6 +48,7 @@ export function CategoryIcon({
           />
         </svg>
       );
+    case "kitchen-care":
     case "dish-wash":
       return (
         <svg viewBox="0 0 48 48" fill="none" className={className} aria-hidden="true">
@@ -82,6 +84,7 @@ export function CategoryIcon({
           />
         </svg>
       );
+    case "floor-surface-care":
     case "floor-cleaners":
       return (
         <svg viewBox="0 0 48 48" fill="none" className={className} aria-hidden="true">
@@ -95,6 +98,7 @@ export function CategoryIcon({
           <path d="M18 32v8M24 31v9M30 32v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
+    case "bathroom-care":
     case "toilet-bathroom-care":
       return (
         <svg viewBox="0 0 48 48" fill="none" className={className} aria-hidden="true">

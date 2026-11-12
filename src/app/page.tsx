@@ -88,26 +88,26 @@ export default async function HomePage() {
           </Link>
         </div>
 
-        <div className="mt-7 grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5 sm:gap-5">
+        <div className="mt-7 grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6 sm:gap-4">
           {BRAND.categories.map((cat) => {
             const catCount = products.filter((p) => p.category === cat.slug).length;
             return (
               <Link
                 key={cat.slug}
                 href={`/shop?category=${cat.slug}`}
-                className="group flex flex-col overflow-hidden rounded-2xl border border-[#E5E8E3] bg-white transition-all hover:border-[#154734]/40 hover:shadow-md"
+                className="group flex flex-col overflow-hidden rounded-xl border border-[#E5E8E3] bg-white transition-all hover:border-[#154734]/40 hover:shadow-md"
               >
-                <div className="relative flex aspect-square items-center justify-center bg-[#F6F7F4] p-4 sm:p-5">
+                <div className="relative flex aspect-square items-center justify-center bg-[#F6F7F4] p-4">
                   <SafeImage
                     src={cat.image}
                     alt={cat.name}
                     className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
                   />
-                  <span className="absolute left-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/95 text-[#154734] shadow-xs border border-[#E5E8E3]">
+                  <span className="absolute left-2.5 top-2.5 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/95 text-[#154734] border border-[#E5E8E3]">
                     <CategoryIcon slug={cat.slug} className="h-4 w-4" />
                   </span>
                 </div>
-                <div className="flex flex-1 flex-col justify-between p-3.5 sm:p-4">
+                <div className="flex flex-1 flex-col justify-between p-3.5">
                   <div>
                     <h3 className="text-sm font-bold text-[#141A16] group-hover:text-[#154734]">
                       {cat.name}
@@ -116,13 +116,41 @@ export default async function HomePage() {
                       {cat.shortDesc}
                     </p>
                   </div>
-                  <p className="mt-2.5 text-[11px] font-bold uppercase tracking-wider text-[#1E6B4B]">
-                    {catCount} {catCount === 1 ? "Product" : "Products"} &rarr;
+                  <p className="mt-2 text-[11px] font-bold uppercase tracking-wider text-[#1E6B4B]">
+                    {catCount} Products &rarr;
                   </p>
                 </div>
               </Link>
             );
           })}
+
+          {/* 6th Tile: Combos & Value Packs */}
+          <Link
+            href="/bundles"
+            className="group flex flex-col overflow-hidden rounded-xl border border-[#154734]/20 bg-[#EBF5EE] transition-all hover:border-[#154734]/50 hover:shadow-md"
+          >
+            <div className="relative flex aspect-square items-center justify-center bg-white/70 p-4">
+              <SafeImage
+                src="/images/detergent-matic-perfect-5l.jpg"
+                alt="Combos and Value Packs"
+                className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+              />
+              <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-md bg-[#E5A91A] px-2 py-0.5 text-[10px] font-extrabold uppercase text-[#141A16]">
+                Save 20%
+              </span>
+            </div>
+            <div className="flex flex-1 flex-col justify-between p-3.5">
+              <div>
+                <h3 className="text-sm font-bold text-[#154734]">Combos &amp; Value Packs</h3>
+                <p className="mt-0.5 line-clamp-1 text-xs text-[#1E6B4B]">
+                  Build a 4+ item box &amp; save 20%
+                </p>
+              </div>
+              <p className="mt-2 text-[11px] font-bold uppercase tracking-wider text-[#154734]">
+                Build Box &rarr;
+              </p>
+            </div>
+          </Link>
         </div>
       </section>
 

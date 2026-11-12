@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { BRAND } from "@/lib/brand";
+import { BRAND, normalizeCategorySlug } from "@/lib/brand";
 
 export function getCategoryFallbackImage(categorySlug?: string): string {
-  const found = BRAND.categories.find((c) => c.slug === categorySlug);
+  const normalized = categorySlug ? normalizeCategorySlug(categorySlug) : "";
+  const found = BRAND.categories.find((c) => c.slug === normalized);
   return found?.image || "/images/detergent-matic-royal-rose-1l.jpg";
 }
 

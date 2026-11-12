@@ -16,33 +16,24 @@ function getCategoryMeta(rawCategory: string): { slug: string; name: string; fal
   if (matched) {
     return { slug: matched.slug, name: matched.name, fallbackImg: matched.image };
   }
-  if (clean.includes("laundry") || clean.includes("detergent")) {
-    return { slug: "laundry-detergents", name: "Laundry Detergents", fallbackImg: "/images/detergent-matic-royal-rose-1l.jpg" };
-  }
-  if (clean.includes("fabric")) {
-    return { slug: "fabric-care", name: "Fabric Care", fallbackImg: "/images/fabric-conditioner-1l.jpg" };
+  if (clean.includes("laundry") || clean.includes("detergent") || clean.includes("fabric")) {
+    return { slug: "laundry-care", name: "Laundry Care", fallbackImg: "/images/detergent-matic-royal-rose-1l.jpg" };
   }
   if (clean.includes("dish") || clean.includes("kitchen")) {
-    return { slug: "dish-wash", name: "Dish Wash", fallbackImg: "/images/dishwash-lemon-500ml.jpg" };
+    return { slug: "kitchen-care", name: "Kitchen Care", fallbackImg: "/images/dishwash-lemon-500ml.jpg" };
   }
-  if (clean.includes("hand")) {
-    return { slug: "hand-wash", name: "Hand Wash", fallbackImg: "/images/handwash-orange-500ml-pump.jpg" };
-  }
-  if (clean.includes("floor")) {
-    return { slug: "floor-cleaners", name: "Floor Cleaners", fallbackImg: "/images/floorcleaner-rose-1l.jpg" };
+  if (clean.includes("floor") || clean.includes("car") || clean.includes("glass") || clean.includes("air") || clean.includes("freshener") || clean.includes("surface")) {
+    return { slug: "floor-surface-care", name: "Floor & Surface Care", fallbackImg: "/images/floorcleaner-rose-1l.jpg" };
   }
   if (clean.includes("toilet") || clean.includes("bath")) {
-    return { slug: "toilet-bathroom-care", name: "Toilet & Bathroom Care", fallbackImg: "/images/toiletcleaner-perfumed-5l.jpg" };
+    return { slug: "bathroom-care", name: "Bathroom Care", fallbackImg: "/images/toiletcleaner-perfumed-5l.jpg" };
   }
-  if (clean.includes("car") || clean.includes("glass")) {
-    return { slug: "car-glass-care", name: "Car & Glass Care", fallbackImg: "/images/carshampoo-500ml.jpg" };
-  }
-  if (clean.includes("air") || clean.includes("freshener")) {
-    return { slug: "air-fresheners", name: "Air Fresheners", fallbackImg: "/images/airfreshener-lavender-500ml.jpg" };
+  if (clean.includes("hand") || clean.includes("face") || clean.includes("body") || clean.includes("hair") || clean.includes("perfume") || clean.includes("personal")) {
+    return { slug: "personal-care", name: "Hand & Personal Care", fallbackImg: "/images/handwash-orange-500ml-pump.jpg" };
   }
   return {
     slug: slugify(rawCategory) || "personal-care",
-    name: rawCategory.trim() || "Personal Care",
+    name: rawCategory.trim() || "Hand & Personal Care",
     fallbackImg: "/images/facewash-sandal-200ml.jpg",
   };
 }

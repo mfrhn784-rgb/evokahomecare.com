@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { BRAND } from "@/lib/brand";
+import { BRAND, normalizeCategorySlug } from "@/lib/brand";
 import { Product } from "@/lib/types";
 import { ProductCard } from "./ProductCard";
 import { CategoryIcon } from "./CategoryIcon";
@@ -12,7 +12,7 @@ export function HomeCategoryShelf({ products }: { products: Product[] }) {
   const [activeCat, setActiveCat] = useState<string>(BRAND.categories[0].slug);
 
   const visibleProducts = useMemo(() => {
-    return products.filter((p) => p.category === activeCat).slice(0, 8);
+    return products.filter((p) => normalizeCategorySlug(p.category) === activeCat).slice(0, 8);
   }, [products, activeCat]);
 
   const activeCategoryObj = BRAND.categories.find((c) => c.slug === activeCat);
@@ -42,7 +42,7 @@ export function HomeCategoryShelf({ products }: { products: Product[] }) {
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-4 mb-4">
         {BRAND.categories.map((cat) => {
           const isActive = cat.slug === activeCat;
-          const count = products.filter((p) => p.category === cat.slug).length;
+          const count = products.filter((p) => normalizeCategorySlug(p.category) === cat.slug).length;
           if (count === 0) return null;
           return (
             <button

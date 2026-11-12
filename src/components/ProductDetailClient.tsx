@@ -138,10 +138,15 @@ export function ProductDetailClient({
           {/* Right Column: Pricing, Variant Selector, Add To Bag */}
           <div className="lg:col-span-6 space-y-6">
             <div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="px-3 py-1 rounded-full bg-mint-light text-xs font-bold text-emerald-vibrant uppercase tracking-wider">
                   {product.categoryName}
                 </span>
+                {product.subcategory && (
+                  <span className="px-2.5 py-1 rounded-full bg-[#F4F6F4] border border-[#E5E8E3] text-xs font-medium text-[#121614]">
+                    {product.subcategory}
+                  </span>
+                )}
                 <span className="text-xs text-slate-body font-medium">SKU: {variant.sku}</span>
               </div>
 

@@ -16,6 +16,7 @@ export interface Product {
   name: string;
   category: CategorySlug;
   categoryName: string;
+  subcategory?: string;
   shortTagline: string;
   description: string;
   scent: string;

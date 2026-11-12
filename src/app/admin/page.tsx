@@ -61,7 +61,7 @@ export default function AdminPage() {
 
   // Quick Product Add
   const [name, setName] = useState("");
-  const [category, setCategory] = useState<CategorySlug>("laundry-detergents");
+  const [category, setCategory] = useState<CategorySlug>("laundry-care");
   const [tagline, setTagline] = useState("");
   const [scent, setScent] = useState("Lavender");
   const [variantLabel, setVariantLabel] = useState("1L");
@@ -486,7 +486,7 @@ export default function AdminPage() {
               type="password"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              placeholder="Enter PIN (starter PIN: evoka2026)"
+              placeholder="Enter Admin PIN"
               className="w-full px-4 py-2.5 rounded-xl bg-cream border border-sand text-sm"
             />
           </div>

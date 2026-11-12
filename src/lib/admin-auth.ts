@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 export const ADMIN_COOKIE_NAME = "evoka_admin_session";
 
 function getSecret(): string {
-  return process.env.ADMIN_SESSION_SECRET || (process.env.ADMIN_PIN || "evoka2026") + "_secret_salt";
+  return process.env.ADMIN_SESSION_SECRET || (process.env.ADMIN_PIN || "farhan2009") + "_secret_salt";
 }
 
 export function createAdminToken(): string {
@@ -14,7 +14,7 @@ export function createAdminToken(): string {
 }
 
 export function verifyAdminSession(req: NextRequest): boolean {
-  const expectedPin = process.env.ADMIN_PIN || "evoka2026";
+  const expectedPin = process.env.ADMIN_PIN || "farhan2009";
   const headerPin = req.headers.get("x-admin-pin");
   if (headerPin && headerPin === expectedPin) return true;
 

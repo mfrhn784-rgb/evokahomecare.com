@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { pin } = (await req.json()) as { pin?: string };
-  const expectedPin = process.env.ADMIN_PIN || "evoka2026";
+  const expectedPin = process.env.ADMIN_PIN || "farhan2009";
   if (!pin || pin !== expectedPin) {
     return NextResponse.json({ error: "Incorrect Admin PIN." }, { status: 401 });
   }

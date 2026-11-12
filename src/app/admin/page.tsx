@@ -546,6 +546,48 @@ export default function AdminPage() {
     setStatusMsg(`Calculated +${Math.round((multiplier - 1) * 100)}% MRP for all items. Click "Save All Rates" to persist.`);
   };
 
+  const handleClearAllOrders = async () => {
+    const confirmation = window.prompt(
+      "CAUTION: This will permanently delete ALL orders and reset Active Orders & Net Sales to 0. Type CLEAR to confirm:",
+      ""
+    );
+    if (confirmation !== "CLEAR") {
+      setStatusMsg("Order clear cancelled.");
+      return;
+    }
+    setStatusMsg("Clearing all orders and resetting sales metrics...");
+    try {
+      const res = await fetch("/api/orders?all=1", { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) {
+        setOrders([]);
+        setStatusMsg("✓ Active orders and sales history reset to 0.");
+      } else {
+        setStatusMsg(data.error || "Failed to clear orders.");
+      }
+    } catch {
+      setStatusMsg("Network error clearing orders.");
+    }
+  };
+
+  const handleDeleteSingleOrder = async (orderId: string) => {
+    if (!window.confirm(`Delete order ${orderId} permanently? This will deduct its total from Net Sales.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/orders?id=${encodeURIComponent(orderId)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) {
+        setOrders(data.orders || []);
+        setStatusMsg(`✓ Order ${orderId} removed.`);
+      } else {
+        setStatusMsg(data.error || "Failed to delete order.");
+      }
+    } catch {
+      setStatusMsg("Network error deleting order.");
+    }
+  };
+
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -774,27 +816,76 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs with 1-Click Metrics Reset Controls */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-sand p-5">
-          <p className="text-xs text-muted uppercase font-semibold">Active Orders</p>
+        <div className="bg-white rounded-2xl border border-sand p-5 relative group">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted uppercase font-semibold">Active Orders</p>
+            {orders.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllOrders}
+                className="text-[10px] text-crimson font-bold hover:underline cursor-pointer"
+                title="Reset all orders & net sales to 0"
+              >
+                Reset to 0
+              </button>
+            )}
+          </div>
           <p className="text-3xl font-bold text-charcoal mt-1">{orders.length}</p>
           <p className="text-xs text-clay mt-1">{pendingCount} awaiting confirmation</p>
         </div>
         <div className="bg-white rounded-2xl border border-sand p-5">
-          <p className="text-xs text-muted uppercase font-semibold">Net Sales</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted uppercase font-semibold">Net Sales</p>
+            {activeRevenue > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllOrders}
+                className="text-[10px] text-crimson font-bold hover:underline cursor-pointer"
+                title="Clear orders to reset net sales to 0"
+              >
+                Reset ₹0
+              </button>
+            )}
+          </div>
           <p className="text-3xl font-bold text-charcoal mt-1">₹{activeRevenue}</p>
           <p className="text-xs text-sage mt-1">Excludes cancelled orders</p>
         </div>
         <div className="bg-white rounded-2xl border border-sand p-5">
-          <p className="text-xs text-muted uppercase font-semibold">Catalog SKUs</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted uppercase font-semibold">Catalog SKUs</p>
+            <button
+              type="button"
+              onClick={handleResetInventory}
+              className="text-[10px] text-sage font-bold hover:underline cursor-pointer"
+              title="Reset catalog SKUs back to default"
+            >
+              Reset SKUs
+            </button>
+          </div>
           <p className="text-3xl font-bold text-charcoal mt-1">{totalVariants}</p>
           <p className="text-xs text-muted mt-1">Across {products.length} product families</p>
         </div>
         <div className="bg-white rounded-2xl border border-sand p-5">
-          <p className="text-xs text-muted uppercase font-semibold flex items-center gap-1">
-            <AlertTriangle className="w-3.5 h-3.5 text-clay" /> Low Stock
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted uppercase font-semibold flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-clay" /> Low Stock
+            </p>
+            {lowStockCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkStockAction("restock_low");
+                  setBulkStockAmount("50");
+                  setShowBulkStockModal(true);
+                }}
+                className="text-[10px] text-sage font-bold hover:underline cursor-pointer"
+              >
+                Restock All
+              </button>
+            )}
+          </div>
           <p className="text-3xl font-bold text-charcoal mt-1">{lowStockCount}</p>
           <p className="text-xs text-muted mt-1">Below 15 units</p>
         </div>
@@ -1314,15 +1405,25 @@ export default function AdminPage() {
                         <p className="text-[11px] text-muted uppercase">Order Total</p>
                         <p className="text-xl font-bold text-charcoal">₹{order.total}</p>
                       </div>
-                      {order.paymentScreenshot && (
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setPreviewScreenshotUrl(order.paymentScreenshot!)}
-                          className="px-3 py-1.5 rounded-lg border border-sand bg-oat hover:bg-sand text-xs font-semibold text-charcoal inline-flex items-center gap-1.5 cursor-pointer"
+                          onClick={() => handleDeleteSingleOrder(order.id)}
+                          className="px-2.5 py-1 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Delete this order permanently"
                         >
-                          <Eye className="w-3.5 h-3.5" /> View Payment Screenshot
+                          <Trash2 className="w-3 h-3" /> Delete Order
                         </button>
-                      )}
+                        {order.paymentScreenshot && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewScreenshotUrl(order.paymentScreenshot!)}
+                            className="px-3 py-1.5 rounded-lg border border-sand bg-oat hover:bg-sand text-xs font-semibold text-charcoal inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> View Payment Screenshot
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 

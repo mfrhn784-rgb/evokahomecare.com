@@ -149,6 +149,21 @@ export async function deleteProduct(id: string): Promise<Product[]> {
   return store.products;
 }
 
+export async function clearAllOrders(): Promise<Order[]> {
+  const store = await readStore();
+  store.orders = [];
+  store.invoiceSeq = 0;
+  await writeFullStore(store);
+  return [];
+}
+
+export async function deleteOrderById(id: string): Promise<Order[]> {
+  const store = await readStore();
+  store.orders = store.orders.filter((o) => o.id.toLowerCase() !== id.toLowerCase());
+  await writeFullStore(store);
+  return store.orders;
+}
+
 export async function resetInventoryToSeed(): Promise<Product[]> {
   const store = await readStore();
   // Deep clone seed products with pristine default stock (50 each)

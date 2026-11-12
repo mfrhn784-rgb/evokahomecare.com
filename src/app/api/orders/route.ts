@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  clearAllOrders,
   createVerifiedOrder,
   customerModifyOrder,
+  deleteOrderById,
   getOrderById,
   getOrders,
   updateOrderByAdmin,
@@ -184,6 +186,27 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Could not place order. Please check your details." }, { status: 400 });
   }
+}
+
+export async function DELETE(req: NextRequest) {
+  if (!verifyAdminSession(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { searchParams } = new URL(req.url);
+  const orderId = searchParams.get("id");
+  const all = searchParams.get("all") === "1" || searchParams.get("all") === "true";
+
+  if (all) {
+    const cleared = await clearAllOrders();
+    return NextResponse.json({ orders: cleared, message: "All orders and sales history have been cleared." });
+  }
+
+  if (orderId) {
+    const updated = await deleteOrderById(orderId);
+    return NextResponse.json({ orders: updated, message: `Order ${orderId} removed.` });
+  }
+
+  return NextResponse.json({ error: "Specify an order id or ?all=1" }, { status: 400 });
 }
 
 export async function PATCH(req: NextRequest) {

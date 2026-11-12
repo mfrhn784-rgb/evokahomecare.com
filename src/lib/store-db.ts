@@ -1,0 +1,303 @@
+import fs from "fs";
+import path from "path";
+import { Order, PaymentStatus, Product } from "./types";
+import { SEED_PRODUCTS } from "./seed-products";
+import { getEvokaBlobStore, isBlobsRuntime } from "./netlify-blobs-helper";
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const STORE_PATH = path.join(DATA_DIR, "store.json");
+const BLOB_STORE_NAME = "evoka-store";
+
+interface StoreData {
+  products: Product[];
+  orders: Order[];
+}
+
+function readLocalSeed(): StoreData {
+  try {
+    if (fs.existsSync(STORE_PATH)) {
+      const raw = fs.readFileSync(STORE_PATH, "utf-8");
+      const parsed = JSON.parse(raw) as StoreData;
+      return {
+        products:
+          Array.isArray(parsed.products) && parsed.products.length > 0
+            ? parsed.products
+            : SEED_PRODUCTS,
+        orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      };
+    }
+  } catch {
+    // Fallback cleanly to bundled seed catalog
+  }
+  return {
+    products: SEED_PRODUCTS,
+    orders: [],
+  };
+}
+
+function writeLocalStore(data: StoreData): void {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2), "utf-8");
+}
+
+function ensureLocalStore(): StoreData {
+  if (!fs.existsSync(STORE_PATH)) {
+    const initial: StoreData = { products: SEED_PRODUCTS, orders: [] };
+    writeLocalStore(initial);
+    return initial;
+  }
+  return readLocalSeed();
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Store operation timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
+async function readStore(): Promise<StoreData> {
+  if (isBlobsRuntime()) {
+    try {
+      const store = getEvokaBlobStore(BLOB_STORE_NAME, true);
+      const [products, orders] = await withTimeout(
+        Promise.all([
+          store.get("products", { type: "json" }) as Promise<Product[] | null>,
+          store.get("orders", { type: "json" }) as Promise<Order[] | null>,
+        ]),
+        4000
+      );
+
+      const seed = readLocalSeed();
+      return {
+        products: Array.isArray(products) && products.length > 0 ? products : seed.products,
+        orders: Array.isArray(orders) ? orders : seed.orders,
+      };
+    } catch {
+      return readLocalSeed();
+    }
+  }
+
+  return ensureLocalStore();
+}
+
+async function writeProductsStore(products: Product[]): Promise<void> {
+  if (isBlobsRuntime()) {
+    const store = getEvokaBlobStore(BLOB_STORE_NAME, true);
+    await store.setJSON("products", products);
+    return;
+  }
+  const current = ensureLocalStore();
+  current.products = products;
+  writeLocalStore(current);
+}
+
+async function writeFullStore(data: StoreData): Promise<void> {
+  if (isBlobsRuntime()) {
+    const store = getEvokaBlobStore(BLOB_STORE_NAME, true);
+    await Promise.all([
+      store.setJSON("products", data.products),
+      store.setJSON("orders", data.orders),
+    ]);
+    return;
+  }
+  writeLocalStore(data);
+}
+
+export async function getProducts(): Promise<Product[]> {
+  const store = await readStore();
+  return store.products;
+}
+
+export async function getProductBySlug(slug: string): Promise<Product | undefined> {
+  const products = await getProducts();
+  return products.find((p) => p.slug === slug);
+}
+
+export async function saveProducts(products: Product[]): Promise<Product[]> {
+  await writeProductsStore(products);
+  return products;
+}
+
+export async function upsertProduct(product: Product): Promise<Product[]> {
+  const store = await readStore();
+  const idx = store.products.findIndex((p) => p.id === product.id || p.slug === product.slug);
+  if (idx >= 0) {
+    store.products[idx] = product;
+  } else {
+    store.products.unshift(product);
+  }
+  await writeProductsStore(store.products);
+  return store.products;
+}
+
+export async function deleteProduct(id: string): Promise<Product[]> {
+  const store = await readStore();
+  store.products = store.products.filter((p) => p.id !== id);
+  await writeProductsStore(store.products);
+  return store.products;
+}
+
+export async function getOrders(): Promise<Order[]> {
+  const store = await readStore();
+  return store.orders;
+}
+
+export async function getOrderById(id: string): Promise<Order | undefined> {
+  const orders = await getOrders();
+  return orders.find((o) => o.id.toLowerCase() === id.toLowerCase());
+}
+
+/**
+ * Validates submitted items against live catalog prices & stock, then persists the order.
+ */
+export async function createVerifiedOrder(
+  buildOrder: (verified: {
+    items: Order["items"];
+    subtotal: number;
+  }) => Order
+): Promise<{ ok: true; order: Order } | { ok: false; error: string }> {
+  const store = await readStore();
+  const verifiedItems: Order["items"] = [];
+  let subtotal = 0;
+
+  for (const requested of buildOrder({ items: [], subtotal: 0 }).items) {
+    const prod = store.products.find((p) => p.id === requested.productId);
+    if (!prod) {
+      return { ok: false, error: `Product "${requested.name}" is no longer available.` };
+    }
+    const variant = prod.variants.find((v) => v.id === requested.variantId);
+    if (!variant) {
+      return { ok: false, error: `Selected pack for "${prod.name}" is unavailable.` };
+    }
+    const qty = Math.floor(Number(requested.quantity));
+    if (!Number.isFinite(qty) || qty < 1 || qty > 50) {
+      return { ok: false, error: `Invalid quantity for "${prod.name}".` };
+    }
+    if (variant.stock < qty) {
+      return {
+        ok: false,
+        error: `Only ${variant.stock} unit(s) left in stock for ${prod.name} (${variant.label}).`,
+      };
+    }
+
+    verifiedItems.push({
+      productId: prod.id,
+      variantId: variant.id,
+      name: prod.name,
+      variantLabel: variant.label,
+      price: variant.price,
+      mrp: variant.mrp,
+      image: prod.image,
+      slug: prod.slug,
+      quantity: qty,
+    });
+    subtotal += variant.price * qty;
+  }
+
+  const order = buildOrder({ items: verifiedItems, subtotal });
+
+  for (const item of verifiedItems) {
+    const prod = store.products.find((p) => p.id === item.productId);
+    const variant = prod?.variants.find((v) => v.id === item.variantId);
+    if (variant) {
+      variant.stock = Math.max(0, variant.stock - item.quantity);
+    }
+  }
+
+  store.orders.unshift(order);
+  await writeFullStore(store);
+  return { ok: true, order };
+}
+
+function restoreStock(store: StoreData, order: Order) {
+  for (const item of order.items) {
+    const prod = store.products.find((p) => p.id === item.productId);
+    const variant = prod?.variants.find((v) => v.id === item.variantId);
+    if (variant) {
+      variant.stock += item.quantity;
+    }
+  }
+}
+
+export async function updateOrderByAdmin(
+  orderId: string,
+  updates: {
+    status?: Order["status"];
+    paymentStatus?: PaymentStatus;
+    trackingNumber?: string;
+    courierName?: string;
+  }
+): Promise<Order | null> {
+  const store = await readStore();
+  const order = store.orders.find((o) => o.id === orderId);
+  if (!order) return null;
+
+  const wasCancelled = order.status === "Cancelled";
+  if (updates.status) {
+    if (updates.status === "Cancelled" && !wasCancelled) {
+      restoreStock(store, order);
+    }
+    order.status = updates.status;
+  }
+  if (updates.paymentStatus) order.paymentStatus = updates.paymentStatus;
+  if (typeof updates.trackingNumber === "string") order.trackingNumber = updates.trackingNumber.trim();
+  if (typeof updates.courierName === "string") order.courierName = updates.courierName.trim();
+  order.updatedAt = new Date().toISOString();
+
+  await writeFullStore(store);
+  return order;
+}
+
+export async function customerModifyOrder(
+  orderId: string,
+  phone: string,
+  action: "cancel" | "update_address",
+  payload: {
+    reason?: string;
+    address?: Order["address"];
+    notes?: string;
+  }
+): Promise<{ ok: true; order: Order } | { ok: false; error: string }> {
+  const store = await readStore();
+  const order = store.orders.find((o) => o.id.toLowerCase() === orderId.toLowerCase());
+  if (!order) return { ok: false, error: "Order not found." };
+
+  const cleanInputPhone = phone.replace(/\D/g, "").slice(-10);
+  const cleanOrderPhone = order.phone.replace(/\D/g, "").slice(-10);
+  if (!cleanInputPhone || cleanInputPhone !== cleanOrderPhone) {
+    return { ok: false, error: "Mobile number does not match this order." };
+  }
+
+  if (order.status !== "Pending" && order.status !== "Confirmed") {
+    return {
+      ok: false,
+      error: `Order cannot be modified because it is already "${order.status}". Please contact us on WhatsApp.`,
+    };
+  }
+
+  if (action === "cancel") {
+    order.status = "Cancelled";
+    order.cancellationReason = payload.reason?.trim() || "Cancelled by customer";
+    restoreStock(store, order);
+  } else if (action === "update_address" && payload.address) {
+    order.address = {
+      line1: String(payload.address.line1 || order.address.line1).trim(),
+      landmark: String(payload.address.landmark || "").trim(),
+      city: String(payload.address.city || order.address.city).trim(),
+      state: String(payload.address.state || order.address.state).trim(),
+      pincode: String(payload.address.pincode || order.address.pincode).trim(),
+    };
+    if (typeof payload.notes === "string") {
+      order.notes = payload.notes.trim();
+    }
+  }
+
+  order.updatedAt = new Date().toISOString();
+  await writeFullStore(store);
+  return { ok: true, order };
+}

@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme {
+  --color-emerald-deep: #154734;
+  --color-emerald-card: #1B5E44;
+  --color-emerald-vibrant: #1E6B4B;
+  --color-mint: #2D8A5E;
+  --color-mint-light: #EBF5EE;
+  --color-mint-glow: #4ADE80;
+  --color-champagne: #E5A91A;
+  --color-gold: #D49B1A;
+  --color-ice: #F6F7F4;
+  --color-pearl: #FFFFFF;
+  --color-charcoal-deep: #1A1D1B;
+  --color-slate-body: #525B56;
+  --color-charcoal: #1A1D1B;
+  --color-muted: #5C6660;
+  --color-sand: #E4E7E2;
+  --color-cream: #F9FAF7;
+  --color-oat: #EFF2ED;
+  --color-sage: #1E6B4B;
+  --color-sage-dark: #154734;
+  --color-sage-light: #EBF5EE;
+  --color-crimson: #DC2626;
+
+  --animate-float-slow: float-slow 7s ease-in-out infinite;
+  --animate-float-reverse: float-reverse 9s ease-in-out infinite;
+  --animate-shimmer: shimmer 2.5s infinite linear;
+  --animate-pulse-glow: pulse-glow 3s infinite;
+  --animate-marquee: marquee 32s linear infinite;
+}
+
+@keyframes float-slow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes float-reverse {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(8px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #FFFFFF;
+  color: #1A1D1B;
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Manrope", "Inter", "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-dark {
+  background: rgba(21, 71, 52, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.mesh-bg {
+  background-color: #FFFFFF;
+}
+
+.font-editorial {
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Manrope", "Inter", "Segoe UI", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Hide scrollbars cleanly for horizontal category rails */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

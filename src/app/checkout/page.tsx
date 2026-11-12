@@ -17,11 +17,18 @@ import {
   Upload,
   X,
   AlertCircle,
+  UserCheck,
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { BRAND } from "@/lib/brand";
 import { Order } from "@/lib/types";
 import { SafeImage } from "@/components/SafeImage";
+import {
+  clearSavedProfile,
+  loadSavedProfile,
+  saveCustomerProfile,
+  saveOrderRef,
+} from "@/lib/customer-storage";
 
 function buildWhatsAppOrderMessage(order: Order): string {
   const summary = order.items
@@ -94,6 +101,80 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
+  const [profileHydrated, setProfileHydrated] = useState(false);
+  const [loadedFromSaved, setLoadedFromSaved] = useState(false);
+
+  // Auto-load saved customer details on mount
+  useEffect(() => {
+    const saved = loadSavedProfile();
+    if (saved) {
+      if (saved.customerName) setCustomerName(saved.customerName);
+      if (saved.phone) setPhone(saved.phone);
+      if (saved.email) setEmail(saved.email);
+      if (saved.fulfillmentType) setFulfillmentType(saved.fulfillmentType);
+      if (saved.pickupOutlet) setPickupOutlet(saved.pickupOutlet);
+      if (saved.line1) setLine1(saved.line1);
+      if (saved.landmark) setLandmark(saved.landmark);
+      if (saved.city) setCity(saved.city);
+      if (saved.state) setState(saved.state);
+      if (saved.pincode) setPincode(saved.pincode);
+      if (saved.notes) setNotes(saved.notes);
+      if (saved.paymentMethod) setPaymentMethod(saved.paymentMethod);
+      if (saved.customerName || saved.phone || saved.line1) {
+        setLoadedFromSaved(true);
+      }
+    }
+    setProfileHydrated(true);
+  }, []);
+
+  // Auto-save customer details as they type or update preferences
+  useEffect(() => {
+    if (!profileHydrated) return;
+    if (!customerName && !phone && !line1 && !pincode) return;
+    const timer = setTimeout(() => {
+      saveCustomerProfile({
+        customerName,
+        phone,
+        email,
+        fulfillmentType,
+        pickupOutlet,
+        line1,
+        landmark,
+        city,
+        state,
+        pincode,
+        notes,
+        paymentMethod,
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [
+    profileHydrated,
+    customerName,
+    phone,
+    email,
+    fulfillmentType,
+    pickupOutlet,
+    line1,
+    landmark,
+    city,
+    state,
+    pincode,
+    notes,
+    paymentMethod,
+  ]);
+
+  const handleClearSavedDetails = () => {
+    clearSavedProfile();
+    setLoadedFromSaved(false);
+    setCustomerName("");
+    setPhone("");
+    setEmail("");
+    setLine1("");
+    setLandmark("");
+    setPincode("");
+    setNotes("");
+  };
 
   const effectiveShipping = 0;
   const effectiveTotal = Math.max(0, subtotal - discount) + effectiveShipping;
@@ -210,6 +291,21 @@ export default function CheckoutPage() {
       }
 
       const order = data.order as Order;
+      saveOrderRef(order);
+      saveCustomerProfile({
+        customerName,
+        phone,
+        email,
+        fulfillmentType,
+        pickupOutlet,
+        line1,
+        landmark,
+        city,
+        state,
+        pincode,
+        notes,
+        paymentMethod,
+      });
       setConfirmedOrder(order);
       clearCart();
 
@@ -427,9 +523,24 @@ export default function CheckoutPage() {
 
             {/* 2. Contact & Address Details */}
             <div className="bg-white rounded-2xl p-6 space-y-4 border border-[#E5E8E3]">
-              <h2 className="text-base sm:text-lg font-bold text-[#121614]">
-                2. Contact &amp; Billing Address
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-[#121614]">
+                  2. Contact &amp; Billing Address
+                </h2>
+                {loadedFromSaved && (
+                  <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#EBF5EE] border border-[#184D3B]/15 text-[11px] font-semibold text-[#184D3B]">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Saved details auto-filled</span>
+                    <button
+                      type="button"
+                      onClick={handleClearSavedDetails}
+                      className="ml-1 underline text-[#5C6661] hover:text-red-600 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[#5C6661] mb-1">Full Name *</label>

@@ -11,13 +11,23 @@ import {
   Truck,
   CheckCircle2,
   MessageCircle,
+  RotateCcw,
+  Clock,
 } from "lucide-react";
 import { Order } from "@/lib/types";
 import { BRAND } from "@/lib/brand";
+import { useCart } from "@/context/CartContext";
+import {
+  loadSavedOrders,
+  loadSavedProfile,
+  SavedOrderRef,
+  syncSavedOrdersStatus,
+} from "@/lib/customer-storage";
 
 const TIMELINE = ["Pending", "Confirmed", "Packed", "Shipped", "Delivered"] as const;
 
 function OrdersContent() {
+  const { addItem, openCart } = useCart();
   const searchParams = useSearchParams();
   const initialId = searchParams.get("id") || "";
   const initialPhone = searchParams.get("phone") || "";
@@ -25,6 +35,7 @@ function OrdersContent() {
   const [orderIdInput, setOrderIdInput] = useState(initialId);
   const [phoneInput, setPhoneInput] = useState(initialPhone);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [savedOrders, setSavedOrders] = useState<SavedOrderRef[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [actionMsg, setActionMsg] = useState("");
@@ -58,8 +69,15 @@ function OrdersContent() {
         setOrders([]);
       } else if (data.order) {
         setOrders([data.order]);
+        syncSavedOrdersStatus([data.order]);
+        setSavedOrders(loadSavedOrders());
       } else {
-        setOrders(data.orders || []);
+        const list = (data.orders || []) as Order[];
+        setOrders(list);
+        if (list.length > 0) {
+          syncSavedOrdersStatus(list);
+          setSavedOrders(loadSavedOrders());
+        }
       }
     } catch {
       setError("Network error while checking orders.");
@@ -70,10 +88,26 @@ function OrdersContent() {
   };
 
   useEffect(() => {
+    const localOrders = loadSavedOrders();
+    setSavedOrders(localOrders);
     if (initialPhone) {
       fetchOrders(initialId, initialPhone);
+      return;
+    }
+    const savedProfile = loadSavedProfile();
+    const autoPhone = savedProfile?.phone || localOrders[0]?.phone || "";
+    if (autoPhone && autoPhone.replace(/\D/g, "").length >= 10) {
+      setPhoneInput(autoPhone);
+      fetchOrders("", autoPhone);
     }
   }, [initialId, initialPhone]);
+
+  const handleReorder = (order: Order) => {
+    for (const item of order.items) {
+      addItem({ ...item });
+    }
+    openCart();
+  };
 
   const handleCancelOrder = async (order: Order) => {
     const reason = window.prompt("Optional reason for cancelling this order:", "Changed my mind");
@@ -144,10 +178,61 @@ function OrdersContent() {
             Track &amp; Manage Your Orders
           </h1>
           <p className="text-xs sm:text-sm text-slate-body font-medium">
-            Verify your mobile number to view your invoice, edit delivery address, or cancel before
-            packing.
+            Your recent orders on this device load automatically. Verify any mobile number to view
+            invoices, reorder, or manage delivery.
           </p>
         </div>
+
+        {/* Saved Recent Orders Quick Strip */}
+        {savedOrders.length > 0 && (
+          <div className="bg-white rounded-2xl border border-[#E5E8E3] p-4 space-y-2.5 print:hidden">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-[#121614] inline-flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#184D3B]" />
+                Recent Orders on This Device
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const p = savedOrders[0]?.phone || phoneInput;
+                  if (p) {
+                    setOrderIdInput("");
+                    setPhoneInput(p);
+                    fetchOrders("", p);
+                  }
+                }}
+                className="text-[11px] font-bold text-[#184D3B] hover:underline cursor-pointer"
+              >
+                Show All ({savedOrders.length})
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {savedOrders.slice(0, 6).map((ref) => (
+                <button
+                  key={ref.id}
+                  type="button"
+                  onClick={() => {
+                    setOrderIdInput(ref.id);
+                    setPhoneInput(ref.phone);
+                    fetchOrders(ref.id, ref.phone);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border text-left text-xs transition-all cursor-pointer ${
+                    orders.some((o) => o.id === ref.id)
+                      ? "bg-[#EBF5EE] border-[#184D3B] text-[#184D3B]"
+                      : "bg-[#F9FAF8] border-[#E5E8E3] text-[#121614] hover:border-[#184D3B]"
+                  }`}
+                >
+                  <span className="font-mono font-bold">{ref.id}</span>
+                  <span className="mx-1.5 text-[#5C6661]">•</span>
+                  <span className="font-semibold">₹{ref.total}</span>
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-white border border-[#E5E8E3]">
+                    {ref.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <form
           onSubmit={(e) => {
@@ -423,6 +508,14 @@ function OrdersContent() {
 
                 {/* Customer Action Controls */}
                 <div className="flex flex-wrap gap-2.5 pt-2 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => handleReorder(order)}
+                    className="px-4 py-2 rounded-full bg-[#184D3B] text-white text-xs font-bold inline-flex items-center gap-1.5 hover:bg-[#12382B] transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Reorder Items
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => window.print()}

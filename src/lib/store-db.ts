@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
-import { Order, PaymentStatus, Product } from "./types";
+import { Order, OrderInvoice, PaymentStatus, Product } from "./types";
 import { SEED_PRODUCTS } from "./seed-products";
+import { BRAND } from "./brand";
 import { getEvokaBlobStore, isBlobsRuntime } from "./netlify-blobs-helper";
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -11,6 +12,7 @@ const BLOB_STORE_NAME = "evoka-store";
 interface StoreData {
   products: Product[];
   orders: Order[];
+  invoiceSeq?: number;
 }
 
 function readLocalSeed(): StoreData {
@@ -24,6 +26,7 @@ function readLocalSeed(): StoreData {
             ? parsed.products
             : SEED_PRODUCTS,
         orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+        invoiceSeq: typeof parsed.invoiceSeq === "number" ? parsed.invoiceSeq : 0,
       };
     }
   } catch {
@@ -32,6 +35,7 @@ function readLocalSeed(): StoreData {
   return {
     products: SEED_PRODUCTS,
     orders: [],
+    invoiceSeq: 0,
   };
 }
 
@@ -64,10 +68,11 @@ async function readStore(): Promise<StoreData> {
   if (isBlobsRuntime()) {
     try {
       const store = getEvokaBlobStore(BLOB_STORE_NAME, true);
-      const [products, orders] = await withTimeout(
+      const [products, orders, invoiceSeq] = await withTimeout(
         Promise.all([
           store.get("products", { type: "json" }) as Promise<Product[] | null>,
           store.get("orders", { type: "json" }) as Promise<Order[] | null>,
+          store.get("invoiceSeq", { type: "json" }) as Promise<number | null>,
         ]),
         4000
       );
@@ -76,6 +81,7 @@ async function readStore(): Promise<StoreData> {
       return {
         products: Array.isArray(products) && products.length > 0 ? products : seed.products,
         orders: Array.isArray(orders) ? orders : seed.orders,
+        invoiceSeq: typeof invoiceSeq === "number" ? invoiceSeq : seed.invoiceSeq || 0,
       };
     } catch {
       return readLocalSeed();
@@ -102,6 +108,7 @@ async function writeFullStore(data: StoreData): Promise<void> {
     await Promise.all([
       store.setJSON("products", data.products),
       store.setJSON("orders", data.orders),
+      store.setJSON("invoiceSeq", data.invoiceSeq || 0),
     ]);
     return;
   }
@@ -160,12 +167,22 @@ export async function createVerifiedOrder(
     items: Order["items"];
     subtotal: number;
   }) => Order
-): Promise<{ ok: true; order: Order } | { ok: false; error: string }> {
+): Promise<{ ok: true; order: Order; duplicate?: boolean } | { ok: false; error: string }> {
   const store = await readStore();
+  const draft = buildOrder({ items: [], subtotal: 0 });
+
+  // Idempotency guard: prevent duplicate submissions for the same checkout request
+  if (draft.clientRequestId) {
+    const existing = store.orders.find((o) => o.clientRequestId === draft.clientRequestId);
+    if (existing) {
+      return { ok: true, order: existing, duplicate: true };
+    }
+  }
+
   const verifiedItems: Order["items"] = [];
   let subtotal = 0;
 
-  for (const requested of buildOrder({ items: [], subtotal: 0 }).items) {
+  for (const requested of draft.items) {
     const prod = store.products.find((p) => p.id === requested.productId);
     if (!prod) {
       return { ok: false, error: `Product "${requested.name}" is no longer available.` };
@@ -227,6 +244,8 @@ function restoreStock(store: StoreData, order: Order) {
 export async function updateOrderByAdmin(
   orderId: string,
   updates: {
+    adminAction?: "verify_payment" | "reject_payment" | "confirm_cod";
+    reason?: string;
     status?: Order["status"];
     paymentStatus?: PaymentStatus;
     trackingNumber?: string;
@@ -238,8 +257,31 @@ export async function updateOrderByAdmin(
   if (!order) return null;
 
   const wasCancelled = order.status === "Cancelled";
+
+  if (updates.adminAction === "verify_payment") {
+    order.paymentStatus = "PAID";
+    order.paymentVerifiedAt = new Date().toISOString();
+    order.paymentRejectedReason = undefined;
+    if (order.status === "PENDING_CONFIRMATION" || order.status === "Pending") {
+      order.status = "Confirmed";
+    }
+  } else if (updates.adminAction === "reject_payment") {
+    order.paymentStatus = "REJECTED";
+    order.paymentRejectedReason =
+      updates.reason?.trim() || "Payment could not be verified against received funds.";
+    if (!wasCancelled) {
+      restoreStock(store, order);
+    }
+    order.status = "Cancelled";
+    order.cancellationReason = order.paymentRejectedReason;
+  } else if (updates.adminAction === "confirm_cod") {
+    if (order.status === "PENDING_CONFIRMATION" || order.status === "Pending") {
+      order.status = "Confirmed";
+    }
+  }
+
   if (updates.status) {
-    if (updates.status === "Cancelled" && !wasCancelled) {
+    if (updates.status === "Cancelled" && !wasCancelled && order.status !== "Cancelled") {
       restoreStock(store, order);
     }
     order.status = updates.status;
@@ -251,6 +293,105 @@ export async function updateOrderByAdmin(
 
   await writeFullStore(store);
   return order;
+}
+
+export function isOrderEligibleForInvoice(order: Order): { eligible: boolean; reason?: string } {
+  if (order.status === "Cancelled") {
+    return { eligible: false, reason: "Cancelled orders cannot have a final invoice." };
+  }
+  if (order.paymentStatus === "REJECTED") {
+    return { eligible: false, reason: "Rejected payment orders cannot be invoiced." };
+  }
+  if (order.paymentMethod === "upi") {
+    const isPaid = order.paymentStatus === "PAID" || order.paymentStatus === "Paid";
+    if (!isPaid) {
+      return {
+        eligible: false,
+        reason: "Verify UPI payment against received funds before generating invoice.",
+      };
+    }
+  } else {
+    const confirmedStatuses: Order["status"][] = [
+      "Confirmed",
+      "Packed",
+      "Shipped",
+      "Delivered",
+    ];
+    if (!confirmedStatuses.includes(order.status)) {
+      return {
+        eligible: false,
+        reason: "Confirm this COD order before generating an invoice.",
+      };
+    }
+  }
+  return { eligible: true };
+}
+
+export async function generateOrGetOrderInvoice(
+  orderId: string
+): Promise<
+  | { ok: true; order: Order; invoice: OrderInvoice; newlyGenerated: boolean }
+  | { ok: false; error: string; status: number }
+> {
+  const store = await readStore();
+  const order = store.orders.find((o) => o.id.toLowerCase() === orderId.toLowerCase());
+  if (!order) {
+    return { ok: false, error: "Order not found.", status: 404 };
+  }
+
+  const eligibility = isOrderEligibleForInvoice(order);
+  if (!eligibility.eligible) {
+    return {
+      ok: false,
+      error: eligibility.reason || "Order is not eligible for invoicing.",
+      status: 400,
+    };
+  }
+
+  // Regeneration preserves original invoice number & financial snapshot
+  if (order.invoice) {
+    return { ok: true, order, invoice: order.invoice, newlyGenerated: false };
+  }
+
+  const existingMax = store.orders.reduce((max, o) => {
+    const match = o.invoice?.invoiceNumber.match(/(\d+)$/);
+    return match ? Math.max(max, parseInt(match[1], 10)) : max;
+  }, 0);
+
+  const nextSeq = Math.max(store.invoiceSeq || 0, existingMax) + 1;
+  store.invoiceSeq = nextSeq;
+
+  const taxRatePercent = Number.isFinite(BRAND.business.taxRatePercent)
+    ? BRAND.business.taxRatePercent
+    : 0;
+  const taxAmount =
+    taxRatePercent > 0
+      ? Math.round((order.total - (order.total * 100) / (100 + taxRatePercent)) * 100) / 100
+      : 0;
+
+  const invoice: OrderInvoice = {
+    invoiceNumber: `EVK-INV-${String(nextSeq).padStart(4, "0")}`,
+    generatedAt: new Date().toISOString(),
+    subtotal: order.subtotal,
+    discount: order.discount,
+    shippingFee: order.shippingFee,
+    taxRatePercent,
+    taxAmount,
+    total: order.total,
+    paymentMethod:
+      order.paymentMethod === "upi"
+        ? "UPI Prepaid"
+        : order.paymentMethod === "cod"
+        ? "Cash on Delivery"
+        : order.paymentMethod.toUpperCase(),
+    paymentStatus: order.paymentStatus,
+  };
+
+  order.invoice = invoice;
+  order.updatedAt = new Date().toISOString();
+  await writeFullStore(store);
+
+  return { ok: true, order, invoice, newlyGenerated: true };
 }
 
 export async function customerModifyOrder(
@@ -273,7 +414,11 @@ export async function customerModifyOrder(
     return { ok: false, error: "Mobile number does not match this order." };
   }
 
-  if (order.status !== "Pending" && order.status !== "Confirmed") {
+  if (
+    order.status !== "PENDING_CONFIRMATION" &&
+    order.status !== "Pending" &&
+    order.status !== "Confirmed"
+  ) {
     return {
       ok: false,
       error: `Order cannot be modified because it is already "${order.status}". Please contact us on WhatsApp.`,

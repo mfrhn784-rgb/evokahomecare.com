@@ -45,6 +45,7 @@ export interface CartItem {
 }
 
 export type OrderStatus =
+  | "PENDING_CONFIRMATION"
   | "Pending"
   | "Confirmed"
   | "Packed"
@@ -52,11 +53,34 @@ export type OrderStatus =
   | "Delivered"
   | "Cancelled";
 
-export type PaymentMethod = "razorpay" | "cod" | "whatsapp";
-export type PaymentStatus = "Pending" | "Paid" | "Paid (Test/Razorpay)" | "COD" | "Refunded";
+export type PaymentMethod = "upi" | "cod" | "whatsapp" | "razorpay";
+export type PaymentStatus =
+  | "PAYMENT_UNDER_REVIEW"
+  | "PAID"
+  | "REJECTED"
+  | "NOT_PAID"
+  | "Pending"
+  | "Paid"
+  | "Paid (Test/Razorpay)"
+  | "COD"
+  | "Refunded";
+
+export interface OrderInvoice {
+  invoiceNumber: string;
+  generatedAt: string;
+  subtotal: number;
+  discount: number;
+  shippingFee: number;
+  taxRatePercent: number;
+  taxAmount: number;
+  total: number;
+  paymentMethod: string;
+  paymentStatus: string;
+}
 
 export interface Order {
   id: string;
+  clientRequestId?: string;
   createdAt: string;
   updatedAt?: string;
   customerName: string;
@@ -80,6 +104,11 @@ export interface Order {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   paymentId?: string;
+  upiReference?: string;
+  paymentScreenshot?: string;
+  paymentVerifiedAt?: string;
+  paymentRejectedReason?: string;
+  invoice?: OrderInvoice;
   status: OrderStatus;
   trackingNumber?: string;
   courierName?: string;

@@ -7,8 +7,8 @@ export const BRAND = {
   origin: "Pallichal, Trivandrum, Kerala",
   phone: "+91 96333 43432",
   phoneHref: "tel:+919633343432",
-  whatsappNumber: "919633343432",
-  whatsappUrl: "https://wa.me/919633343432",
+  whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "919633343432",
+  whatsappUrl: `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "919633343432"}`,
   instagramUrl: "https://www.instagram.com/evokahomecare",
   instagramHandle: "@evokahomecare",
   email: "evokacleanings@gmail.com",
@@ -16,6 +16,19 @@ export const BRAND = {
   freeShippingThreshold: 0,
   flatShippingFee: 0,
   enableOnlinePay: process.env.NEXT_PUBLIC_ENABLE_ONLINE_PAY === "true",
+  upi: {
+    id: process.env.NEXT_PUBLIC_UPI_ID || "evokacleanings@okaxis",
+    payeeName: process.env.NEXT_PUBLIC_UPI_PAYEE_NAME || "EVOKA Home & Personal Care",
+    qrImage: process.env.NEXT_PUBLIC_UPI_QR_IMAGE || "",
+  },
+  business: {
+    legalName: process.env.NEXT_PUBLIC_BUSINESS_LEGAL_NAME || "EVOKA Home & Personal Care",
+    address:
+      process.env.NEXT_PUBLIC_BUSINESS_ADDRESS ||
+      "Pallichal Junction, Thiruvananthapuram, Kerala - 695020",
+    gstin: process.env.NEXT_PUBLIC_BUSINESS_GSTIN || "",
+    taxRatePercent: Number(process.env.NEXT_PUBLIC_TAX_RATE_PERCENT || "0"),
+  },
   outlets: [
     {
       id: "poovar",

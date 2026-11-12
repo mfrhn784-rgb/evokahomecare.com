@@ -103,7 +103,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
 
-    const paymentMethod = body.paymentMethod === "whatsapp" ? "whatsapp" : body.paymentMethod === "razorpay" && BRAND.enableOnlinePay ? "razorpay" : "cod";
+    const paymentMethod =
+      body.paymentMethod === "upi"
+        ? "upi"
+        : body.paymentMethod === "whatsapp"
+        ? "whatsapp"
+        : "cod";
+
+    const upiReference = String(body.upiReference || "").trim();
+    if (paymentMethod === "upi" && upiReference.length < 4) {
+      return NextResponse.json(
+        { error: "Please enter a valid UPI Transaction Reference / UTR number." },
+        { status: 400 }
+      );
+    }
+
+    const paymentScreenshot = body.paymentScreenshot
+      ? String(body.paymentScreenshot).trim()
+      : undefined;
+    const clientRequestId = body.clientRequestId
+      ? String(body.clientRequestId).trim()
+      : undefined;
 
     const code = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : "";
 
@@ -117,7 +137,8 @@ export async function POST(req: NextRequest) {
       const total = afterDiscount + shippingFee;
 
       const order: Order = {
-        id: `EVK-${Date.now().toString().slice(-6)}`,
+        id: `EVK-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+        clientRequestId,
         createdAt: new Date().toISOString(),
         customerName,
         phone: phoneRaw,
@@ -139,13 +160,14 @@ export async function POST(req: NextRequest) {
         total,
         paymentMethod,
         paymentStatus:
-          paymentMethod === "razorpay"
-            ? "Paid"
-            : paymentMethod === "whatsapp"
-            ? "Pending"
-            : "COD",
-        paymentId: body.paymentId ? String(body.paymentId) : undefined,
-        status: paymentMethod === "razorpay" ? "Confirmed" : "Pending",
+          paymentMethod === "upi"
+            ? "PAYMENT_UNDER_REVIEW"
+            : paymentMethod === "cod"
+            ? "NOT_PAID"
+            : "Pending",
+        upiReference: paymentMethod === "upi" ? upiReference : undefined,
+        paymentScreenshot: paymentMethod === "upi" ? paymentScreenshot : undefined,
+        status: "PENDING_CONFIRMATION",
         notes: body.notes ? String(body.notes).trim() : undefined,
       };
       return order;
@@ -155,7 +177,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    return NextResponse.json({ order: result.order }, { status: 201 });
+    return NextResponse.json(
+      { order: result.order, duplicate: Boolean(result.duplicate) },
+      { status: result.duplicate ? 200 : 201 }
+    );
   } catch {
     return NextResponse.json({ error: "Could not place order. Please check your details." }, { status: 400 });
   }
@@ -189,6 +214,8 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const updated = await updateOrderByAdmin(body.orderId, {
+      adminAction: body.adminAction,
+      reason: body.reason,
       status: body.status,
       paymentStatus: body.paymentStatus,
       trackingNumber: body.trackingNumber,

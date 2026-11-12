@@ -17,12 +17,20 @@ import {
   ImagePlus,
   Tag,
   Save,
+  FileText,
+  Eye,
+  X,
+  CheckCircle2,
+  XCircle,
+  QrCode,
+  Banknote,
 } from "lucide-react";
 import { CategorySlug, Order, OrderStatus, PaymentStatus, Product, ProductVariant } from "@/lib/types";
 import { BRAND } from "@/lib/brand";
 import { SafeImage, getCategoryFallbackImage } from "@/components/SafeImage";
 
 const ORDER_STATUSES: OrderStatus[] = [
+  "PENDING_CONFIRMATION",
   "Pending",
   "Confirmed",
   "Packed",
@@ -31,7 +39,36 @@ const ORDER_STATUSES: OrderStatus[] = [
   "Cancelled",
 ];
 
-const PAYMENT_STATUSES: PaymentStatus[] = ["COD", "Paid", "Pending", "Refunded"];
+const PAYMENT_STATUSES: PaymentStatus[] = [
+  "PAYMENT_UNDER_REVIEW",
+  "PAID",
+  "REJECTED",
+  "NOT_PAID",
+  "COD",
+  "Paid",
+  "Pending",
+  "Refunded",
+];
+
+function checkInvoiceEligibility(order: Order): { eligible: boolean; reason?: string } {
+  if (order.status === "Cancelled") {
+    return { eligible: false, reason: "Cancelled order — invoice locked." };
+  }
+  if (order.paymentStatus === "REJECTED") {
+    return { eligible: false, reason: "Rejected payment — invoice locked." };
+  }
+  if (order.paymentMethod === "upi") {
+    if (order.paymentStatus !== "PAID" && order.paymentStatus !== "Paid") {
+      return { eligible: false, reason: "Verify UPI payment against bank funds to unlock invoice." };
+    }
+  } else {
+    const confirmed: OrderStatus[] = ["Confirmed", "Packed", "Shipped", "Delivered"];
+    if (!confirmed.includes(order.status)) {
+      return { eligible: false, reason: "Confirm COD order to unlock invoice." };
+    }
+  }
+  return { eligible: true };
+}
 
 export default function AdminPage() {
   const [pin, setPin] = useState("");
@@ -53,11 +90,15 @@ export default function AdminPage() {
   const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
 
   // Order fulfillment filters & draft tracking edits
+  const [orderPaymentView, setOrderPaymentView] = useState<"all" | "upi" | "cod">("all");
   const [orderFilter, setOrderFilter] = useState<"All" | OrderStatus>("All");
   const [orderSearch, setOrderSearch] = useState("");
   const [trackingDrafts, setTrackingDrafts] = useState<
     Record<string, { courierName: string; trackingNumber: string }>
   >({});
+  const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
+  const [previewInvoiceOrder, setPreviewInvoiceOrder] = useState<Order | null>(null);
+  const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null);
 
   // Quick Product Add
   const [name, setName] = useState("");
@@ -150,6 +191,8 @@ export default function AdminPage() {
   const updateOrder = async (
     orderId: string,
     updates: {
+      adminAction?: "verify_payment" | "reject_payment" | "confirm_cod";
+      reason?: string;
       status?: OrderStatus;
       paymentStatus?: PaymentStatus;
       courierName?: string;
@@ -165,6 +208,47 @@ export default function AdminPage() {
     if (res.ok && data.order) {
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
       setStatusMsg(`Updated order ${orderId}`);
+    } else if (data.error) {
+      setStatusMsg(data.error);
+    }
+  };
+
+  const handleGenerateInvoice = async (orderId: string) => {
+    setGeneratingInvoiceId(orderId);
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/invoice`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStatusMsg(data.error || "Could not generate invoice.");
+        return null;
+      }
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
+      setStatusMsg(
+        data.newlyGenerated
+          ? `Generated Invoice ${data.invoice.invoiceNumber}`
+          : `Loaded Invoice ${data.invoice.invoiceNumber}`
+      );
+      return data.order as Order;
+    } finally {
+      setGeneratingInvoiceId(null);
+    }
+  };
+
+  const handlePrintInvoicePdf = async (order: Order) => {
+    const updated = order.invoice ? order : await handleGenerateInvoice(order.id);
+    if (!updated) return;
+    const pdfUrl = `/api/orders/${encodeURIComponent(order.id)}/invoice`;
+    const win = window.open(pdfUrl, "_blank");
+    if (win) {
+      win.addEventListener("load", () => {
+        try {
+          win.print();
+        } catch {
+          // User can print from PDF viewer toolbar
+        }
+      });
     }
   };
 
@@ -413,18 +497,35 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   };
 
+  const upiReviewCount = useMemo(
+    () => orders.filter((o) => o.paymentMethod === "upi" && o.paymentStatus === "PAYMENT_UNDER_REVIEW").length,
+    [orders]
+  );
+  const codPendingCount = useMemo(
+    () =>
+      orders.filter(
+        (o) =>
+          o.paymentMethod !== "upi" &&
+          (o.status === "PENDING_CONFIRMATION" || o.status === "Pending")
+      ).length,
+    [orders]
+  );
+
   const filteredOrders = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
     return orders.filter((o) => {
+      if (orderPaymentView === "upi" && o.paymentMethod !== "upi") return false;
+      if (orderPaymentView === "cod" && o.paymentMethod === "upi") return false;
       if (orderFilter !== "All" && o.status !== orderFilter) return false;
       if (!q) return true;
       return (
         o.id.toLowerCase().includes(q) ||
         o.customerName.toLowerCase().includes(q) ||
-        o.phone.toLowerCase().includes(q)
+        o.phone.toLowerCase().includes(q) ||
+        (o.upiReference || "").toLowerCase().includes(q)
       );
     });
-  }, [orders, orderFilter, orderSearch]);
+  }, [orders, orderPaymentView, orderFilter, orderSearch]);
 
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -844,6 +945,55 @@ export default function AdminPage() {
       {/* Tab 1: Orders Fulfillment */}
       {tab === "orders" && (
         <div className="space-y-4">
+          {/* Separate UPI vs COD Views */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setOrderPaymentView("all")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-colors ${
+                orderPaymentView === "all"
+                  ? "bg-[#184D3B] text-white border-[#184D3B]"
+                  : "bg-white text-charcoal border-sand"
+              }`}
+            >
+              All Orders ({orders.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderPaymentView("upi")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold border inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                orderPaymentView === "upi"
+                  ? "bg-[#184D3B] text-white border-[#184D3B]"
+                  : "bg-white text-charcoal border-sand"
+              }`}
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>UPI Prepaid Orders</span>
+              {upiReviewCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px]">
+                  {upiReviewCount} review
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderPaymentView("cod")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold border inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                orderPaymentView === "cod"
+                  ? "bg-[#184D3B] text-white border-[#184D3B]"
+                  : "bg-white text-charcoal border-sand"
+              }`}
+            >
+              <Banknote className="w-3.5 h-3.5" />
+              <span>Cash on Delivery (COD)</span>
+              {codPendingCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px]">
+                  {codPendingCount} pending
+                </span>
+              )}
+            </button>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-1.5">
               {(["All", ...ORDER_STATUSES] as const).map((st) => (
@@ -867,7 +1017,7 @@ export default function AdminPage() {
                 type="search"
                 value={orderSearch}
                 onChange={(e) => setOrderSearch(e.target.value)}
-                placeholder="Search ID, name, phone..."
+                placeholder="Search ID, name, phone, UPI ref..."
                 className="w-full pl-9 pr-3 py-2 rounded-full bg-white border border-sand text-xs"
               />
             </div>
@@ -880,17 +1030,35 @@ export default function AdminPage() {
           ) : (
             filteredOrders.map((order) => {
               const draft = trackingDrafts[order.id] || { courierName: "", trackingNumber: "" };
+              const invoiceCheck = checkInvoiceEligibility(order);
+              const isUpi = order.paymentMethod === "upi";
               return (
                 <div
                   key={order.id}
                   className="bg-white rounded-2xl border border-sand p-5 space-y-4"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-bold text-base text-charcoal">{order.id}</span>
-                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-oat text-charcoal font-medium">
-                          {order.paymentMethod.toUpperCase()} • {order.paymentStatus}
+                        <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-oat text-charcoal font-bold">
+                          {isUpi ? "UPI PREPAID" : order.paymentMethod.toUpperCase()}
+                        </span>
+                        <span
+                          className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
+                            order.paymentStatus === "PAID" || order.paymentStatus === "Paid"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : order.paymentStatus === "REJECTED"
+                              ? "bg-red-100 text-red-700"
+                              : order.paymentStatus === "PAYMENT_UNDER_REVIEW"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          Payment: {order.paymentStatus}
+                        </span>
+                        <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#E8F3EE] text-[#184D3B] font-bold">
+                          Fulfillment: {order.status}
                         </span>
                         <span className="text-xs text-muted">
                           {new Date(order.createdAt).toLocaleString("en-IN")}
@@ -904,30 +1072,185 @@ export default function AdminPage() {
                           ? `Store Pickup: ${order.pickupOutlet}`
                           : `Deliver To: ${order.address.line1}, ${order.address.city}, ${order.address.state} - ${order.address.pincode}`}
                       </p>
+                      {order.upiReference && (
+                        <p className="text-xs font-mono font-bold text-[#184D3B]">
+                          UPI Ref / UTR: {order.upiReference}
+                        </p>
+                      )}
+                      {order.paymentRejectedReason && (
+                        <p className="text-xs text-red-600 font-semibold">
+                          Rejection Note: {order.paymentRejectedReason}
+                        </p>
+                      )}
                       {order.notes && (
                         <p className="text-xs text-clay font-medium">Customer Note: {order.notes}</p>
                       )}
-                      <p className="text-xs text-sage font-medium pt-1">
+                      <p className="text-xs text-sage font-medium pt-0.5">
                         {order.items
                           .map((i) => `${i.name} (${i.variantLabel}) ×${i.quantity}`)
                           .join(" | ")}
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="text-right mr-2">
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="text-right">
                         <p className="text-[11px] text-muted uppercase">Order Total</p>
                         <p className="text-xl font-bold text-charcoal">₹{order.total}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => window.print()}
-                        className="p-2.5 rounded-xl bg-oat text-charcoal hover:bg-sand cursor-pointer"
-                        title="Print Packing Slip"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
+                      {order.paymentScreenshot && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewScreenshotUrl(order.paymentScreenshot!)}
+                          className="px-3 py-1.5 rounded-lg border border-sand bg-oat hover:bg-sand text-xs font-semibold text-charcoal inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> View Payment Screenshot
+                        </button>
+                      )}
                     </div>
+                  </div>
+
+                  {/* Manual Payment Verification / COD Confirmation Bar */}
+                  {(isUpi && order.paymentStatus === "PAYMENT_UNDER_REVIEW") ||
+                  (!isUpi &&
+                    (order.status === "PENDING_CONFIRMATION" || order.status === "Pending")) ? (
+                    <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-xs text-amber-900">
+                        {isUpi ? (
+                          <span>
+                            <strong>Manual Verification Required:</strong> Check UPI Ref{" "}
+                            <code className="font-mono font-bold">{order.upiReference}</code> against
+                            actual received bank/UPI funds before marking Paid. Screenshots are not
+                            proof.
+                          </span>
+                        ) : (
+                          <span>
+                            <strong>COD Confirmation:</strong> Confirm order details with customer
+                            before packing &amp; dispatching.
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {isUpi ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateOrder(order.id, { adminAction: "verify_payment" })
+                              }
+                              className="px-3.5 py-2 rounded-lg bg-[#184D3B] hover:bg-[#12382B] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Verify Payment (Mark Paid)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const reason = window.prompt(
+                                  "Reason for rejecting UPI payment:",
+                                  "Funds not received in merchant account"
+                                );
+                                if (reason !== null) {
+                                  updateOrder(order.id, {
+                                    adminAction: "reject_payment",
+                                    reason,
+                                  });
+                                }
+                              }}
+                              className="px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <XCircle className="w-3.5 h-3.5" /> Reject Payment
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => updateOrder(order.id, { adminAction: "confirm_cod" })}
+                            className="px-3.5 py-2 rounded-lg bg-[#184D3B] hover:bg-[#12382B] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Confirm COD Order
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Automated A4 PDF Invoice Bar */}
+                  <div className="p-3.5 rounded-xl bg-[#F9FAF8] border border-sand flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-xs">
+                      <FileText className="w-4 h-4 text-[#184D3B]" />
+                      {order.invoice ? (
+                        <span className="font-semibold text-charcoal">
+                          Invoice <strong className="text-[#184D3B]">{order.invoice.invoiceNumber}</strong>{" "}
+                          <span className="text-muted">
+                            (Generated {new Date(order.invoice.generatedAt).toLocaleDateString("en-IN")})
+                          </span>
+                        </span>
+                      ) : invoiceCheck.eligible ? (
+                        <span className="text-charcoal font-medium">
+                          Order eligible for A4 PDF Invoice
+                        </span>
+                      ) : (
+                        <span className="text-muted">{invoiceCheck.reason}</span>
+                      )}
+                    </div>
+
+                    {invoiceCheck.eligible && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={generatingInvoiceId === order.id}
+                          onClick={() => handleGenerateInvoice(order.id)}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-sand hover:border-[#184D3B] text-xs font-semibold text-charcoal inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-[#184D3B]" />
+                          <span>
+                            {generatingInvoiceId === order.id
+                              ? "Generating..."
+                              : order.invoice
+                              ? "Regenerate PDF"
+                              : "Generate Invoice PDF"}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const updated = order.invoice
+                              ? order
+                              : await handleGenerateInvoice(order.id);
+                            if (updated) setPreviewInvoiceOrder(updated);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-sand hover:border-[#184D3B] text-xs font-semibold text-charcoal inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Preview Invoice
+                        </button>
+
+                        <a
+                          href={`/api/orders/${encodeURIComponent(order.id)}/invoice?download=1`}
+                          onClick={async (e) => {
+                            if (!order.invoice) {
+                              e.preventDefault();
+                              const updated = await handleGenerateInvoice(order.id);
+                              if (updated) {
+                                window.location.href = `/api/orders/${encodeURIComponent(
+                                  order.id
+                                )}/invoice?download=1`;
+                              }
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-[#184D3B] hover:bg-[#12382B] text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Download PDF
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePrintInvoicePdf(order)}
+                          className="px-3 py-1.5 rounded-lg bg-oat hover:bg-sand border border-sand text-xs font-semibold text-charcoal inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Printer className="w-3.5 h-3.5" /> Print Invoice
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Fulfillment Controls */}
@@ -1302,6 +1625,76 @@ export default function AdminPage() {
                 className="hidden"
               />
             </label>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Screenshot Lightbox */}
+      {previewScreenshotUrl && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-4 space-y-3 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-charcoal">Customer Payment Screenshot</h3>
+              <button
+                type="button"
+                onClick={() => setPreviewScreenshotUrl(null)}
+                className="p-1.5 rounded-lg hover:bg-oat cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <img
+              src={previewScreenshotUrl}
+              alt="Customer UPI Payment Screenshot"
+              className="w-full max-h-[70vh] object-contain rounded-xl bg-[#F9FAF8] border border-sand"
+            />
+            <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+              Always verify the UPI Transaction Reference against actual funds credited in your
+              merchant bank account before clicking Verify Payment.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice PDF Preview Modal */}
+      {previewInvoiceOrder && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full h-[88vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="px-5 py-3.5 border-b border-sand flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-charcoal">
+                  Invoice Preview — {previewInvoiceOrder.invoice?.invoiceNumber}
+                </h3>
+                <p className="text-xs text-muted">Order {previewInvoiceOrder.id}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/api/orders/${encodeURIComponent(previewInvoiceOrder.id)}/invoice?download=1`}
+                  className="px-3 py-1.5 rounded-lg bg-[#184D3B] text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download PDF
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handlePrintInvoicePdf(previewInvoiceOrder)}
+                  className="px-3 py-1.5 rounded-lg bg-oat border border-sand text-xs font-semibold text-charcoal inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewInvoiceOrder(null)}
+                  className="p-1.5 rounded-lg hover:bg-oat cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <iframe
+              src={`/api/orders/${encodeURIComponent(previewInvoiceOrder.id)}/invoice`}
+              title={`Invoice ${previewInvoiceOrder.invoice?.invoiceNumber}`}
+              className="flex-1 w-full bg-[#F4F6F4]"
+            />
           </div>
         </div>
       )}

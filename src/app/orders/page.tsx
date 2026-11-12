@@ -217,8 +217,13 @@ function OrdersContent() {
 
         <div className="space-y-6">
           {orders.map((order) => {
-            const canModify = order.status === "Pending" || order.status === "Confirmed";
-            const currentStep = TIMELINE.indexOf(order.status as (typeof TIMELINE)[number]);
+            const canModify =
+              order.status === "PENDING_CONFIRMATION" ||
+              order.status === "Pending" ||
+              order.status === "Confirmed";
+            const normalizedStatus =
+              order.status === "PENDING_CONFIRMATION" ? "Pending" : order.status;
+            const currentStep = TIMELINE.indexOf(normalizedStatus as (typeof TIMELINE)[number]);
 
             return (
               <div

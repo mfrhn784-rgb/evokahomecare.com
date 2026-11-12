@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteProduct, getProducts, saveProducts, upsertProduct } from "@/lib/store-db";
+import {
+  bulkModifyStock,
+  deleteProduct,
+  getProducts,
+  resetInventoryToSeed,
+  saveProducts,
+  upsertProduct,
+} from "@/lib/store-db";
 import { verifyAdminSession } from "@/lib/admin-auth";
 import { Product } from "@/lib/types";
 
@@ -68,6 +75,24 @@ export async function PUT(req: NextRequest) {
   }
   try {
     const body = await req.json();
+
+    // Reset whole catalog and stock levels back to pristine seed defaults
+    if (body.action === "reset_to_seed") {
+      const reset = await resetInventoryToSeed();
+      return NextResponse.json({ products: reset, message: "Inventory reset to seed defaults." });
+    }
+
+    // Bulk modify stock levels (set all, restock low items, add to existing, or zero out)
+    if (body.action === "bulk_stock_modify") {
+      const modified = await bulkModifyStock({
+        type: body.modifyType,
+        amount: typeof body.amount === "number" ? body.amount : undefined,
+        threshold: typeof body.threshold === "number" ? body.threshold : undefined,
+        category: body.category,
+      });
+      return NextResponse.json({ products: modified, message: "Stock levels updated successfully." });
+    }
+
     if (Array.isArray(body.products)) {
       const saved = await saveProducts(body.products);
       return NextResponse.json({ products: saved });

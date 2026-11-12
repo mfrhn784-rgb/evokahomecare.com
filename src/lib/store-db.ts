@@ -149,6 +149,48 @@ export async function deleteProduct(id: string): Promise<Product[]> {
   return store.products;
 }
 
+export async function resetInventoryToSeed(): Promise<Product[]> {
+  const store = await readStore();
+  // Deep clone seed products with pristine default stock (50 each)
+  const resetProducts: Product[] = JSON.parse(JSON.stringify(SEED_PRODUCTS));
+  store.products = resetProducts;
+  await writeProductsStore(resetProducts);
+  return resetProducts;
+}
+
+export async function bulkModifyStock(action: {
+  type: "set_all" | "add_all" | "restock_low" | "zero_out";
+  amount?: number;
+  threshold?: number;
+  category?: string;
+}): Promise<Product[]> {
+  const store = await readStore();
+  const amt = Math.max(0, Math.floor(action.amount ?? 50));
+  const thresh = action.threshold ?? 15;
+
+  for (const prod of store.products) {
+    if (action.category && action.category !== "all" && prod.category !== action.category) {
+      continue;
+    }
+    for (const v of prod.variants) {
+      if (action.type === "set_all") {
+        v.stock = amt;
+      } else if (action.type === "add_all") {
+        v.stock = Math.max(0, v.stock + amt);
+      } else if (action.type === "restock_low") {
+        if (v.stock < thresh) {
+          v.stock = amt;
+        }
+      } else if (action.type === "zero_out") {
+        v.stock = 0;
+      }
+    }
+  }
+
+  await writeProductsStore(store.products);
+  return store.products;
+}
+
 export async function getOrders(): Promise<Order[]> {
   const store = await readStore();
   return store.orders;

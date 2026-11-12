@@ -24,6 +24,10 @@ import {
   XCircle,
   QrCode,
   Banknote,
+  RotateCcw,
+  SlidersHorizontal,
+  Layers,
+  Sparkles,
 } from "lucide-react";
 import { CategorySlug, Order, OrderStatus, PaymentStatus, Product, ProductVariant } from "@/lib/types";
 import { BRAND } from "@/lib/brand";
@@ -99,6 +103,14 @@ export default function AdminPage() {
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
   const [previewInvoiceOrder, setPreviewInvoiceOrder] = useState<Order | null>(null);
   const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null);
+
+  // Stock filter in Fast Rate Manager
+  const [stockFilter, setStockFilter] = useState<"all" | "low" | "out" | "in">("all");
+  const [bulkStockAction, setBulkStockAction] = useState<"set_all" | "add_all" | "restock_low" | "zero_out">("restock_low");
+  const [bulkStockAmount, setBulkStockAmount] = useState<string>("50");
+  const [bulkStockCategory, setBulkStockCategory] = useState<string>("all");
+  const [showBulkStockModal, setShowBulkStockModal] = useState<boolean>(false);
+  const [isResettingInventory, setIsResettingInventory] = useState<boolean>(false);
 
   // Quick Product Add
   const [name, setName] = useState("");
@@ -428,6 +440,98 @@ export default function AdminPage() {
     }
   };
 
+  const handleResetInventory = async () => {
+    const confirmation = window.prompt(
+      "CAUTION: This will reset all products, prices, and stock levels back to pristine seed defaults (50 units each). Type RESET to confirm:",
+      ""
+    );
+    if (confirmation !== "RESET") {
+      setStatusMsg("Reset cancelled.");
+      return;
+    }
+    setIsResettingInventory(true);
+    setStatusMsg("Resetting inventory to pristine seed catalog...");
+    try {
+      const res = await fetch("/api/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset_to_seed" }),
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.products)) {
+        setProducts(data.products);
+        const pDrafts: Record<string, string> = {};
+        const mDrafts: Record<string, string> = {};
+        const sDrafts: Record<string, string> = {};
+        for (const p of data.products) {
+          for (const v of p.variants) {
+            pDrafts[v.id] = String(v.price);
+            mDrafts[v.id] = String(v.mrp);
+            sDrafts[v.id] = String(v.stock);
+          }
+        }
+        setPriceDrafts(pDrafts);
+        setMrpDrafts(mDrafts);
+        setStockDrafts(sDrafts);
+        setStatusMsg("✓ Inventory successfully reset to seed catalog (50 units per item).");
+      } else {
+        setStatusMsg(data.error || "Failed to reset inventory.");
+      }
+    } catch {
+      setStatusMsg("Network error resetting inventory.");
+    } finally {
+      setIsResettingInventory(false);
+    }
+  };
+
+  const handleBulkModifyStock = async () => {
+    const amt = Number(bulkStockAmount);
+    if (!Number.isFinite(amt) || amt < 0) {
+      alert("Please enter a valid non-negative number for stock amount.");
+      return;
+    }
+    const targetLabel = bulkStockCategory === "all" ? "ALL categories" : bulkStockCategory;
+    let desc = "";
+    if (bulkStockAction === "set_all") desc = `Set stock = ${amt} for ${targetLabel}`;
+    else if (bulkStockAction === "add_all") desc = `Add +${amt} stock to ${targetLabel}`;
+    else if (bulkStockAction === "restock_low") desc = `Restock all items < 15 units up to ${amt} in ${targetLabel}`;
+    else if (bulkStockAction === "zero_out") desc = `Zero out (out of stock) in ${targetLabel}`;
+
+    if (!window.confirm(`Apply bulk stock modification?\n${desc}`)) return;
+
+    setStatusMsg("Applying bulk stock modifications...");
+    try {
+      const res = await fetch("/api/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulk_stock_modify",
+          modifyType: bulkStockAction,
+          amount: amt,
+          threshold: 15,
+          category: bulkStockCategory,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.products)) {
+        setProducts(data.products);
+        const sDrafts = { ...stockDrafts };
+        for (const p of data.products) {
+          for (const v of p.variants) {
+            sDrafts[v.id] = String(v.stock);
+          }
+        }
+        setStockDrafts(sDrafts);
+        setShowBulkStockModal(false);
+        setStatusMsg(`✓ Bulk stock updated: ${desc}`);
+      } else {
+        setStatusMsg(data.error || "Failed to apply bulk stock modification.");
+      }
+    } catch {
+      setStatusMsg("Network error during bulk stock update.");
+    }
+  };
+
   const handleAutoMrpAll = (multiplier = 1.25) => {
     const nextMrp = { ...mrpDrafts };
     for (const p of products) {
@@ -573,6 +677,11 @@ export default function AdminPage() {
     for (const p of products) {
       if (rateCategory !== "all" && p.category !== rateCategory) continue;
       for (const v of p.variants) {
+        const currentStock = Number(stockDrafts[v.id] ?? v.stock);
+        if (stockFilter === "low" && currentStock >= 15) continue;
+        if (stockFilter === "out" && currentStock > 0) continue;
+        if (stockFilter === "in" && currentStock <= 0) continue;
+
         const matchesQuery =
           !q ||
           p.name.toLowerCase().includes(q) ||
@@ -585,7 +694,7 @@ export default function AdminPage() {
       }
     }
     return rows;
-  }, [products, rateCategory, rateSearch]);
+  }, [products, rateCategory, rateSearch, stockDrafts, stockFilter]);
 
   if (checkingSession) {
     return <div className="p-16 text-center text-sm text-muted">Checking admin session...</div>;
@@ -751,6 +860,27 @@ export default function AdminPage() {
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
+                onClick={() => setShowBulkStockModal(true)}
+                className="px-4 py-2.5 rounded-full bg-[#184D3B] text-white text-xs font-bold inline-flex items-center gap-1.5 hover:bg-[#12382B] shadow-sm cursor-pointer"
+                title="Bulk stock modifier tool"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Bulk Stock Tools</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetInventory}
+                disabled={isResettingInventory}
+                className="px-4 py-2.5 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-bold inline-flex items-center gap-1.5 hover:bg-red-600 hover:text-white cursor-pointer transition-colors disabled:opacity-50"
+                title="Restore whole catalog and stock levels back to default"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{isResettingInventory ? "Resetting..." : "Reset Inventory"}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => handleAutoMrpAll(1.25)}
                 className="px-4 py-2.5 rounded-full bg-oat border border-sand text-charcoal text-xs font-bold hover:border-sage cursor-pointer"
                 title="Sets MRP to Price + 25% for items missing an MRP"
@@ -778,8 +908,8 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Filters Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Filters Bar: Categories, Stock Filter & Search */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             {/* Category Pills */}
             <div className="flex flex-wrap gap-1.5">
               <button
@@ -815,16 +945,61 @@ export default function AdminPage() {
               })}
             </div>
 
-            {/* Search */}
-            <div className="relative w-full md:w-64">
-              <Search className="w-4 h-4 text-muted absolute left-3 top-2.5" />
-              <input
-                type="search"
-                value={rateSearch}
-                onChange={(e) => setRateSearch(e.target.value)}
-                placeholder="Search variant name or SKU..."
-                className="w-full pl-9 pr-3 py-2 rounded-full bg-white border border-sand text-xs"
-              />
+            {/* Quick Stock Status Filter & Search */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center rounded-xl bg-white border border-sand p-1 text-xs">
+                <span className="px-2 text-[10px] font-bold uppercase text-muted">Stock:</span>
+                <button
+                  type="button"
+                  onClick={() => setStockFilter("all")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
+                    stockFilter === "all" ? "bg-charcoal text-white" : "text-charcoal hover:bg-oat"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStockFilter("low")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
+                    stockFilter === "low" ? "bg-amber-600 text-white" : "text-amber-700 hover:bg-amber-50"
+                  }`}
+                  title="Stock below 15 units"
+                >
+                  Low (&lt;15)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStockFilter("out")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
+                    stockFilter === "out" ? "bg-crimson text-white" : "text-crimson hover:bg-red-50"
+                  }`}
+                  title="Stock = 0"
+                >
+                  Out (0)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStockFilter("in")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
+                    stockFilter === "in" ? "bg-sage text-white" : "text-sage hover:bg-sage-light"
+                  }`}
+                  title="Stock > 0"
+                >
+                  In Stock
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-muted absolute left-3 top-2.5" />
+                <input
+                  type="search"
+                  value={rateSearch}
+                  onChange={(e) => setRateSearch(e.target.value)}
+                  placeholder="Search variant name or SKU..."
+                  className="w-full pl-9 pr-3 py-2 rounded-full bg-white border border-sand text-xs"
+                />
+              </div>
             </div>
           </div>
 
@@ -1650,6 +1825,16 @@ export default function AdminPage() {
                 <span>Upload Filled CSV</span>
                 <input type="file" accept=".csv,text/csv" onChange={handleCsvUpload} className="hidden" />
               </label>
+
+              <button
+                type="button"
+                onClick={handleResetInventory}
+                disabled={isResettingInventory}
+                className="px-5 py-3 rounded-full bg-red-50 border border-red-200 text-red-700 text-sm font-semibold inline-flex items-center gap-2 hover:bg-red-600 hover:text-white cursor-pointer transition-colors disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{isResettingInventory ? "Resetting..." : "Reset Entire Catalog to Seed"}</span>
+              </button>
             </div>
           </div>
 
@@ -1676,6 +1861,156 @@ export default function AdminPage() {
                 className="hidden"
               />
             </label>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Stock Modification Modal */}
+      {showBulkStockModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-mint-light text-[#184D3B] flex items-center justify-center">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-charcoal">Bulk Stock Modification</h3>
+                  <p className="text-xs text-muted">Update stock across products in one click</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBulkStockModal(false)}
+                className="p-1.5 rounded-lg hover:bg-oat cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
+                  Target Category
+                </label>
+                <select
+                  value={bulkStockCategory}
+                  onChange={(e) => setBulkStockCategory(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-cream border border-sand text-xs font-semibold text-charcoal"
+                >
+                  <option value="all">All Categories ({totalVariants} variants)</option>
+                  {BRAND.categories.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
+                  Action Type
+                </label>
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-sand bg-cream/50 cursor-pointer hover:bg-cream">
+                    <input
+                      type="radio"
+                      name="bulkAction"
+                      checked={bulkStockAction === "restock_low"}
+                      onChange={() => setBulkStockAction("restock_low")}
+                      className="mt-0.5 accent-sage"
+                    />
+                    <div>
+                      <p className="font-bold text-charcoal">Restock Low Inventory (&lt;15 units)</p>
+                      <p className="text-[11px] text-muted">
+                        Only variants with stock below 15 will be updated to the target amount.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-sand bg-cream/50 cursor-pointer hover:bg-cream">
+                    <input
+                      type="radio"
+                      name="bulkAction"
+                      checked={bulkStockAction === "set_all"}
+                      onChange={() => setBulkStockAction("set_all")}
+                      className="mt-0.5 accent-sage"
+                    />
+                    <div>
+                      <p className="font-bold text-charcoal">Set Exact Stock for All</p>
+                      <p className="text-[11px] text-muted">
+                        Overwrites current stock with this exact number for matching items.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-sand bg-cream/50 cursor-pointer hover:bg-cream">
+                    <input
+                      type="radio"
+                      name="bulkAction"
+                      checked={bulkStockAction === "add_all"}
+                      onChange={() => setBulkStockAction("add_all")}
+                      className="mt-0.5 accent-sage"
+                    />
+                    <div>
+                      <p className="font-bold text-charcoal">Add To Current Stock</p>
+                      <p className="text-[11px] text-muted">
+                        Increments existing inventory by this amount for received shipments.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-red-200 bg-red-50/50 cursor-pointer hover:bg-red-50">
+                    <input
+                      type="radio"
+                      name="bulkAction"
+                      checked={bulkStockAction === "zero_out"}
+                      onChange={() => setBulkStockAction("zero_out")}
+                      className="mt-0.5 accent-red-600"
+                    />
+                    <div>
+                      <p className="font-bold text-red-700">Zero Out Stock (Mark Out of Stock)</p>
+                      <p className="text-[11px] text-red-600/80">
+                        Sets stock to 0 for matching items.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {bulkStockAction !== "zero_out" && (
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
+                    Stock Quantity / Increment Amount
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={bulkStockAmount}
+                    onChange={(e) => setBulkStockAmount(e.target.value)}
+                    placeholder="50"
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream border border-sand text-sm font-bold text-charcoal"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-sand">
+              <button
+                type="button"
+                onClick={() => setShowBulkStockModal(false)}
+                className="px-4 py-2 rounded-xl border border-sand bg-white text-xs font-semibold text-charcoal hover:bg-oat cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkModifyStock}
+                className="px-5 py-2.5 rounded-xl bg-sage hover:bg-sage-dark text-cream text-xs font-bold cursor-pointer transition-colors shadow-sm"
+              >
+                Apply Stock Changes
+              </button>
+            </div>
           </div>
         </div>
       )}

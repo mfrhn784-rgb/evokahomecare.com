@@ -7,7 +7,7 @@ export function MarqueeStrip() {
     { icon: Banknote, text: "Cash on Delivery Available" },
     { icon: Package, text: "400ml, 500ml, 1L, 2L & 5L Pack Sizes" },
     { icon: MapPin, text: "Pallichal Jn & Poovar Uchakkada, Trivandrum" },
-    { icon: ShieldCheck, text: "Order Directly on WhatsApp: +91 96333 43432" },
+    { icon: ShieldCheck, text: "Order Directly on WhatsApp: +91 9143374741" },
   ];
 
   return (

@@ -188,7 +188,7 @@ export function CartDrawer() {
                   type="text"
                   value={codeInput}
                   onChange={(e) => setCodeInput(e.target.value)}
-                  placeholder="Coupon code (EVOKA10)"
+                  placeholder="Enter coupon code"
                   className="flex-1 px-3.5 py-2 text-xs rounded-xl bg-ice border border-emerald-deep/15 focus:outline-none focus:border-emerald-vibrant"
                 />
                 <button

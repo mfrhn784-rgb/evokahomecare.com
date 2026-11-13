@@ -135,6 +135,12 @@ export async function generateInvoicePdfBuffer(
   const rightColX = A4_WIDTH - MARGIN - 205;
   let ry = headerTop - 14;
   const invoiceTitle = invoice.taxRatePercent > 0 ? "TAX INVOICE" : "INVOICE";
+
+  // Derive current verified payment status directly from the order/invoice
+  const rawStatus = String(order.paymentStatus || invoice.paymentStatus || "").toUpperCase();
+  const isPaid = rawStatus === "PAID";
+  const displayPaymentStatus = isPaid ? "PAID" : (order.paymentStatus || invoice.paymentStatus);
+
   page.drawText(invoiceTitle, {
     x: rightColX,
     y: ry,
@@ -142,6 +148,31 @@ export async function generateInvoicePdfBuffer(
     font: fontBold,
     color: COLOR_ACCENT,
   });
+
+  // If order is marked PAID, render an official green PAID verification stamp
+  if (isPaid) {
+    const stampW = 56;
+    const stampH = 20;
+    const stampX = A4_WIDTH - MARGIN - stampW;
+    const stampY = ry - 2;
+    page.drawRectangle({
+      x: stampX,
+      y: stampY,
+      width: stampW,
+      height: stampH,
+      borderColor: rgb(0.08, 0.55, 0.28),
+      borderWidth: 1.5,
+      color: rgb(0.92, 0.98, 0.94),
+    });
+    page.drawText("PAID", {
+      x: stampX + 13,
+      y: stampY + 5,
+      size: 11,
+      font: fontBold,
+      color: rgb(0.08, 0.55, 0.28),
+    });
+  }
+
   ry -= 18;
 
   const metaRows: [string, string][] = [
@@ -156,17 +187,25 @@ export async function generateInvoicePdfBuffer(
     ],
     ["Order ID:", order.id],
     ["Payment Method:", invoice.paymentMethod],
-    ["Payment Status:", invoice.paymentStatus],
+    ["Payment Status:", displayPaymentStatus],
   ];
 
   for (const [label, val] of metaRows) {
     page.drawText(label, { x: rightColX, y: ry, size: 8.5, font: fontRegular, color: COLOR_MUTED });
+    const isStatusLabel = label === "Payment Status:";
+    const valColor =
+      isStatusLabel && isPaid
+        ? rgb(0.08, 0.55, 0.28)
+        : isStatusLabel && rawStatus.includes("REJECT")
+        ? rgb(0.78, 0.15, 0.15)
+        : COLOR_DARK;
+
     page.drawText(safeText(val), {
       x: rightColX + 82,
       y: ry,
       size: 8.5,
       font: fontBold,
-      color: COLOR_DARK,
+      color: valColor,
     });
     ry -= 13;
   }
@@ -445,6 +484,45 @@ export async function generateInvoicePdfBuffer(
   });
   y -= 6;
   drawSummaryRow("FINAL AMOUNT", formatINR(invoice.total), true, true);
+
+  // Left-side payment confirmation badge for paid orders
+  if (isPaid) {
+    const leftBoxX = MARGIN;
+    const leftBoxY = y + 4;
+    page.drawRectangle({
+      x: leftBoxX,
+      y: leftBoxY,
+      width: 220,
+      height: 44,
+      color: rgb(0.94, 0.98, 0.95),
+      borderColor: rgb(0.1, 0.6, 0.3),
+      borderWidth: 1,
+    });
+    page.drawText("PAYMENT RECEIVED IN FULL", {
+      x: leftBoxX + 10,
+      y: leftBoxY + 30,
+      size: 8.5,
+      font: fontBold,
+      color: rgb(0.08, 0.55, 0.28),
+    });
+    page.drawText(
+      safeText(`Method: ${invoice.paymentMethod}${order.upiReference ? ` (Ref: ${order.upiReference})` : ""}`),
+      {
+        x: leftBoxX + 10,
+        y: leftBoxY + 18,
+        size: 7.5,
+        font: fontRegular,
+        color: COLOR_DARK,
+      }
+    );
+    page.drawText("Official Status: PAID & VERIFIED", {
+      x: leftBoxX + 10,
+      y: leftBoxY + 7,
+      size: 7.5,
+      font: fontBold,
+      color: rgb(0.08, 0.55, 0.28),
+    });
+  }
 
   // --- Footer on every page ---
   const pages = doc.getPages();

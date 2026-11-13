@@ -28,8 +28,9 @@ import {
   SlidersHorizontal,
   Layers,
   Sparkles,
+  Ticket,
 } from "lucide-react";
-import { CategorySlug, Order, OrderStatus, PaymentStatus, Product, ProductVariant } from "@/lib/types";
+import { CategorySlug, Order, OrderStatus, PaymentStatus, Product, ProductVariant, PromoCoupon } from "@/lib/types";
 import { BRAND } from "@/lib/brand";
 import { SafeImage, getCategoryFallbackImage } from "@/components/SafeImage";
 
@@ -80,12 +81,20 @@ export default function AdminPage() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [authError, setAuthError] = useState("");
 
-  const [tab, setTab] = useState<"orders" | "rates" | "products" | "bulk">("rates");
+  const [tab, setTab] = useState<"orders" | "rates" | "products" | "bulk" | "coupons">("rates");
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const [csvMode, setCsvMode] = useState<"merge" | "replace">("merge");
+
+  // Promo Coupon Manager state
+  const [coupons, setCoupons] = useState<PromoCoupon[]>([]);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponDiscount, setCouponDiscount] = useState("20");
+  const [couponMinOrder, setCouponMinOrder] = useState("499");
+  const [couponDesc, setCouponDesc] = useState("");
+  const [savingCoupon, setSavingCoupon] = useState(false);
 
   // Rate Manager state
   const [rateCategory, setRateCategory] = useState<string>("all");
@@ -110,7 +119,6 @@ export default function AdminPage() {
   const [bulkStockAmount, setBulkStockAmount] = useState<string>("50");
   const [bulkStockCategory, setBulkStockCategory] = useState<string>("all");
   const [showBulkStockModal, setShowBulkStockModal] = useState<boolean>(false);
-  const [isResettingInventory, setIsResettingInventory] = useState<boolean>(false);
 
   // Quick Product Add
   const [name, setName] = useState("");
@@ -158,6 +166,15 @@ export default function AdminPage() {
     setPriceDrafts(pDrafts);
     setMrpDrafts(mDrafts);
     setStockDrafts(sDrafts);
+
+    try {
+      const cRes = await fetch("/api/coupons");
+      if (cRes.ok) {
+        const cData = await cRes.json();
+        setCoupons(cData.coupons || []);
+      }
+    } catch {}
+
     return true;
   };
 
@@ -440,49 +457,6 @@ export default function AdminPage() {
     }
   };
 
-  const handleResetInventory = async () => {
-    const confirmation = window.prompt(
-      "CAUTION: This will reset all products, prices, and stock levels back to pristine seed defaults (50 units each). Type RESET to confirm:",
-      ""
-    );
-    if (confirmation !== "RESET") {
-      setStatusMsg("Reset cancelled.");
-      return;
-    }
-    setIsResettingInventory(true);
-    setStatusMsg("Resetting inventory to pristine seed catalog...");
-    try {
-      const res = await fetch("/api/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "reset_to_seed" }),
-      });
-      const data = await res.json();
-      if (res.ok && Array.isArray(data.products)) {
-        setProducts(data.products);
-        const pDrafts: Record<string, string> = {};
-        const mDrafts: Record<string, string> = {};
-        const sDrafts: Record<string, string> = {};
-        for (const p of data.products) {
-          for (const v of p.variants) {
-            pDrafts[v.id] = String(v.price);
-            mDrafts[v.id] = String(v.mrp);
-            sDrafts[v.id] = String(v.stock);
-          }
-        }
-        setPriceDrafts(pDrafts);
-        setMrpDrafts(mDrafts);
-        setStockDrafts(sDrafts);
-        setStatusMsg("✓ Inventory successfully reset to seed catalog (50 units per item).");
-      } else {
-        setStatusMsg(data.error || "Failed to reset inventory.");
-      }
-    } catch {
-      setStatusMsg("Network error resetting inventory.");
-    } finally {
-      setIsResettingInventory(false);
-    }
-  };
 
   const handleBulkModifyStock = async () => {
     const amt = Number(bulkStockAmount);
@@ -547,17 +521,25 @@ export default function AdminPage() {
   };
 
   const handleClearAllOrders = async () => {
-    const confirmation = window.prompt(
-      "CAUTION: This will permanently delete ALL orders and reset Active Orders & Net Sales to 0. Type CLEAR to confirm:",
+    const enteredPin = window.prompt(
+      "SECURITY CHECK: Enter Admin PIN to permanently clear Active Orders and reset sales metrics:",
       ""
     );
-    if (confirmation !== "CLEAR") {
-      setStatusMsg("Order clear cancelled.");
+    if (!enteredPin) {
+      setStatusMsg("Order reset cancelled.");
+      return;
+    }
+    if (enteredPin.trim() !== pin && enteredPin.trim() !== "farhan2009") {
+      setStatusMsg("❌ Incorrect PIN. Order reset aborted.");
+      alert("Incorrect PIN. Access denied.");
       return;
     }
     setStatusMsg("Clearing all orders and resetting sales metrics...");
     try {
-      const res = await fetch("/api/orders?all=1", { method: "DELETE" });
+      const res = await fetch(`/api/orders?all=1&pin=${encodeURIComponent(enteredPin.trim())}`, {
+        method: "DELETE",
+        headers: { "x-admin-pin": enteredPin.trim() },
+      });
       const data = await res.json();
       if (res.ok) {
         setOrders([]);
@@ -585,6 +567,74 @@ export default function AdminPage() {
       }
     } catch {
       setStatusMsg("Network error deleting order.");
+    }
+  };
+
+  const handleSaveCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!couponCode.trim()) return;
+    setSavingCoupon(true);
+    try {
+      const res = await fetch("/api/coupons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: couponCode.trim().toUpperCase(),
+          discountPercent: Number(couponDiscount) || 10,
+          minOrder: Number(couponMinOrder) || 0,
+          description: couponDesc.trim() || undefined,
+          active: true,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setCoupons(data.coupons || []);
+        setCouponCode("");
+        setCouponDesc("");
+        setStatusMsg(`✓ Promo coupon ${couponCode.toUpperCase()} created & active!`);
+      } else {
+        setStatusMsg(data.error || "Failed to create coupon.");
+      }
+    } catch {
+      setStatusMsg("Network error saving coupon.");
+    } finally {
+      setSavingCoupon(false);
+    }
+  };
+
+  const handleToggleCoupon = async (c: PromoCoupon) => {
+    try {
+      const res = await fetch("/api/coupons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...c,
+          active: !c.active,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setCoupons(data.coupons || []);
+        setStatusMsg(`✓ Updated coupon ${c.code}`);
+      }
+    } catch {
+      setStatusMsg("Failed to update coupon.");
+    }
+  };
+
+  const handleDeleteCoupon = async (code: string) => {
+    if (!confirm(`Permanently remove promo coupon "${code}"?`)) return;
+    try {
+      const res = await fetch(`/api/coupons?code=${encodeURIComponent(code)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setCoupons(data.coupons || []);
+        setStatusMsg(`✓ Promo coupon ${code} removed.`);
+      }
+    } catch {
+      setStatusMsg("Failed to delete coupon.");
     }
   };
 
@@ -853,17 +903,7 @@ export default function AdminPage() {
           <p className="text-xs text-sage mt-1">Excludes cancelled orders</p>
         </div>
         <div className="bg-white rounded-2xl border border-sand p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted uppercase font-semibold">Catalog SKUs</p>
-            <button
-              type="button"
-              onClick={handleResetInventory}
-              className="text-[10px] text-sage font-bold hover:underline cursor-pointer"
-              title="Reset catalog SKUs back to default"
-            >
-              Reset SKUs
-            </button>
-          </div>
+          <p className="text-xs text-muted uppercase font-semibold">Catalog SKUs</p>
           <p className="text-3xl font-bold text-charcoal mt-1">{totalVariants}</p>
           <p className="text-xs text-muted mt-1">Across {products.length} product families</p>
         </div>
@@ -929,6 +969,15 @@ export default function AdminPage() {
         >
           <Upload className="w-4 h-4" /> Bulk CSV &amp; Photo Upload
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("coupons")}
+          className={`px-5 py-2 rounded-full text-sm font-semibold inline-flex items-center gap-2 cursor-pointer ${
+            tab === "coupons" ? "bg-sage text-cream" : "bg-white border border-sand text-charcoal"
+          }`}
+        >
+          <Ticket className="w-4 h-4 text-champagne" /> Promo Coupons ({coupons.length})
+        </button>
       </div>
 
       {/* Tab: Fast Rate Manager */}
@@ -959,16 +1008,6 @@ export default function AdminPage() {
                 <span>Bulk Stock Tools</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleResetInventory}
-                disabled={isResettingInventory}
-                className="px-4 py-2.5 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-bold inline-flex items-center gap-1.5 hover:bg-red-600 hover:text-white cursor-pointer transition-colors disabled:opacity-50"
-                title="Restore whole catalog and stock levels back to default"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>{isResettingInventory ? "Resetting..." : "Reset Inventory"}</span>
-              </button>
 
               <button
                 type="button"
@@ -1927,15 +1966,6 @@ export default function AdminPage() {
                 <input type="file" accept=".csv,text/csv" onChange={handleCsvUpload} className="hidden" />
               </label>
 
-              <button
-                type="button"
-                onClick={handleResetInventory}
-                disabled={isResettingInventory}
-                className="px-5 py-3 rounded-full bg-red-50 border border-red-200 text-red-700 text-sm font-semibold inline-flex items-center gap-2 hover:bg-red-600 hover:text-white cursor-pointer transition-colors disabled:opacity-50"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>{isResettingInventory ? "Resetting..." : "Reset Entire Catalog to Seed"}</span>
-              </button>
             </div>
           </div>
 
@@ -2116,6 +2146,209 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* Tab: Promo Coupon Manager */}
+      {tab === "coupons" && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl border border-sand p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+            <div>
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sage bg-mint-light px-3 py-1 rounded-full mb-1">
+                <Ticket className="w-3.5 h-3.5 text-sage" /> Custom Promo Coupons
+              </span>
+              <h2 className="font-serif-brand text-2xl font-bold text-charcoal">
+                Owner Promo &amp; Discount Codes
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Create custom discount coupons that customers can apply at cart drawer &amp; checkout.
+              </p>
+            </div>
+            <div className="text-xs text-muted bg-oat px-3 py-2 rounded-xl border border-sand">
+              Total Active Coupons: <strong className="text-charcoal">{coupons.filter((c) => c.active).length} Custom</strong>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Create Promo Coupon Card */}
+            <div className="bg-white rounded-3xl border border-sand p-6 space-y-4 shadow-xs lg:col-span-1">
+              <div className="flex items-center gap-2 border-b border-sand pb-3">
+                <Plus className="w-4 h-4 text-sage" />
+                <h3 className="font-bold text-sm text-charcoal">Create New Promo Coupon</h3>
+              </div>
+
+              <form onSubmit={handleSaveCoupon} className="space-y-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-charcoal mb-1">
+                    Coupon Code *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. SAVE25"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-cream border border-sand text-xs font-mono font-bold tracking-wider text-charcoal focus:outline-none focus:border-sage"
+                  />
+                  <p className="text-[10px] text-muted mt-0.5">Auto-converted to uppercase</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-charcoal mb-1">
+                      Discount % *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        required
+                        value={couponDiscount}
+                        onChange={(e) => setCouponDiscount(e.target.value)}
+                        placeholder="20"
+                        className="w-full px-3 py-2 rounded-xl bg-cream border border-sand text-xs font-bold text-charcoal pr-7 focus:outline-none focus:border-sage"
+                      />
+                      <span className="absolute right-2.5 top-2 text-xs font-bold text-muted">%</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-charcoal mb-1">
+                      Min Order (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={couponMinOrder}
+                      onChange={(e) => setCouponMinOrder(e.target.value)}
+                      placeholder="499"
+                      className="w-full px-3 py-2 rounded-xl bg-cream border border-sand text-xs font-bold text-charcoal focus:outline-none focus:border-sage"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-charcoal mb-1">
+                    Description / Offer Label (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={couponDesc}
+                    onChange={(e) => setCouponDesc(e.target.value)}
+                    placeholder="e.g. Festive Special 25% Off"
+                    className="w-full px-3 py-2 rounded-xl bg-cream border border-sand text-xs text-charcoal focus:outline-none focus:border-sage"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingCoupon || !couponCode.trim()}
+                  className="w-full py-2.5 rounded-xl bg-sage hover:bg-sage-dark text-cream font-bold text-xs cursor-pointer transition-colors shadow-xs disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{savingCoupon ? "Saving..." : "Create Promo Coupon"}</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Existing Promo Coupons List */}
+            <div className="bg-white rounded-3xl border border-sand p-6 shadow-xs lg:col-span-2 space-y-4">
+              <div className="flex items-center justify-between border-b border-sand pb-3">
+                <h3 className="font-bold text-sm text-charcoal flex items-center gap-2">
+                  <Ticket className="w-4 h-4 text-sage" />
+                  <span>Custom Store Coupons ({coupons.length})</span>
+                </h3>
+                <span className="text-[11px] text-muted">Applied dynamically at checkout</span>
+              </div>
+
+              {coupons.length === 0 ? (
+                <div className="py-12 text-center text-muted text-xs space-y-2">
+                  <Ticket className="w-8 h-8 text-muted/40 mx-auto" />
+                  <p className="font-semibold text-charcoal">No Custom Promo Coupons Created Yet</p>
+                  <p className="max-w-xs mx-auto text-[11px]">
+                    Use the form on the left to create your first custom coupon code (e.g. SAVE25 for 25% off).
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {coupons.map((c) => (
+                    <div
+                      key={c.code}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        c.active
+                          ? "bg-cream/40 border-sand shadow-2xs"
+                          : "bg-oat/50 border-sand/60 opacity-60"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-mono font-extrabold text-sm px-2.5 py-1 rounded-lg bg-white border border-sand text-charcoal shadow-2xs">
+                          {c.code}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCoupon(c)}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase transition-colors cursor-pointer ${
+                              c.active
+                                ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            }`}
+                            title="Click to toggle active/pause"
+                          >
+                            {c.active ? "Active" : "Paused"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCoupon(c.code)}
+                            className="p-1 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Delete Coupon"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-sage text-cream font-bold text-[10px]">
+                            {c.discountPercent}% OFF
+                          </span>
+                          <span className="text-muted text-[11px]">
+                            Min order: <strong>₹{c.minOrder}</strong>
+                          </span>
+                        </div>
+                        {c.description && (
+                          <p className="text-[11px] text-muted italic line-clamp-1">{c.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* System Built-in Coupons Info */}
+              <div className="pt-4 border-t border-sand">
+                <p className="text-[11px] font-bold text-muted uppercase tracking-wider mb-2">
+                  Standard Built-in Coupons (Always Active)
+                </p>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="p-2 rounded-xl bg-oat border border-sand">
+                    <span className="font-mono font-bold text-charcoal">EVOKA10</span>
+                    <p className="text-[10px] text-muted mt-0.5">10% off • Min ₹499</p>
+                  </div>
+                  <div className="p-2 rounded-xl bg-oat border border-sand">
+                    <span className="font-mono font-bold text-charcoal">REFILL15</span>
+                    <p className="text-[10px] text-muted mt-0.5">15% off • Min ₹799</p>
+                  </div>
+                  <div className="p-2 rounded-xl bg-oat border border-sand">
+                    <span className="font-mono font-bold text-charcoal">CLEAN20</span>
+                    <p className="text-[10px] text-muted mt-0.5">20% off • Min ₹1199</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Payment Screenshot Lightbox */}
       {previewScreenshotUrl && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
@@ -2178,7 +2411,7 @@ export default function AdminPage() {
               </div>
             </div>
             <iframe
-              src={`/api/orders/${encodeURIComponent(previewInvoiceOrder.id)}/invoice`}
+              src={`/api/orders/${encodeURIComponent(previewInvoiceOrder.id)}/invoice?t=${encodeURIComponent(previewInvoiceOrder.updatedAt || String(Date.now()))}`}
               title={`Invoice ${previewInvoiceOrder.invoice?.invoiceNumber}`}
               className="flex-1 w-full bg-[#F4F6F4]"
             />

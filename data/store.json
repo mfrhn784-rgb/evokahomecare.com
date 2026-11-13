@@ -31,7 +31,7 @@
           "label": "1L",
           "price": 189,
           "mrp": 249,
-          "stock": 50,
+          "stock": 47,
           "sku": "EVK-DETERGENT-MATIC-ROYAL-ROSE-1L",
           "image": "/images/detergent-matic-royal-rose-1l.jpg"
         },
@@ -2141,82 +2141,9 @@
       "subcategory": "Bath Soaps"
     }
   ],
-  "orders": [
-    {
-      "id": "EVK-117645",
-      "createdAt": "2026-11-11T09:58:37.645Z",
-      "customerName": "Muhammed Farhan",
-      "phone": "9946394741",
-      "email": "mfrhn784@gmail.com",
-      "fulfillmentType": "delivery",
-      "address": {
-        "line1": "House",
-        "landmark": "",
-        "city": "Thiruvananthapuram",
-        "state": "Kerala",
-        "pincode": "695521"
-      },
-      "items": [
-        {
-          "productId": "evk-001",
-          "variantId": "v-001-500",
-          "name": "Bio-Enzyme Front Load Liquid Detergent",
-          "variantLabel": "500 ml Bottle",
-          "price": 199,
-          "mrp": 249,
-          "image": "/images/detergent-matic-royal-rose-1l.jpg",
-          "slug": "bio-enzyme-front-load-liquid-detergent",
-          "quantity": 1
-        }
-      ],
-      "subtotal": 199,
-      "discount": 0,
-      "shippingFee": 0,
-      "total": 199,
-      "paymentMethod": "cod",
-      "paymentStatus": "COD",
-      "status": "Delivered",
-      "trackingNumber": "",
-      "courierName": "",
-      "updatedAt": "2026-11-11T12:20:02.540Z"
-    },
-    {
-      "id": "EVK-925247",
-      "createdAt": "2026-11-11T09:38:45.247Z",
-      "customerName": "f",
-      "phone": "99",
-      "email": "mfrhn784@gmail.com",
-      "fulfillmentType": "delivery",
-      "address": {
-        "line1": "v",
-        "landmark": "",
-        "city": "Thiruvananthapuram",
-        "state": "Kerala",
-        "pincode": "695521"
-      },
-      "items": [
-        {
-          "productId": "evk-001",
-          "variantId": "v-001-500",
-          "name": "Bio-Enzyme Front Load Liquid Detergent",
-          "variantLabel": "500 ml Bottle",
-          "price": 199,
-          "mrp": 249,
-          "image": "/images/detergent-matic-royal-rose-1l.jpg",
-          "slug": "bio-enzyme-front-load-liquid-detergent",
-          "quantity": 1
-        }
-      ],
-      "subtotal": 199,
-      "discount": 0,
-      "shippingFee": 49,
-      "total": 248,
-      "paymentMethod": "cod",
-      "paymentStatus": "COD",
-      "status": "Delivered",
-      "updatedAt": "2026-11-11T12:20:00.494Z",
-      "trackingNumber": "",
-      "courierName": ""
-    }
-  ]
+  "orders": [],
+  "users": [],
+  "otps": [],
+  "invoiceSeq": 1,
+  "coupons": []
 }

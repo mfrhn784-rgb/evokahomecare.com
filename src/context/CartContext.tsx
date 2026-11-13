@@ -31,6 +31,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [couponCode, setCouponCode] = useState<string>("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [availableCoupons, setAvailableCoupons] = useState<
+    Record<string, { discountPercent: number; minOrder: number; label: string }>
+  >(COUPONS);
+
+  useEffect(() => {
+    fetch("/api/coupons")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.effective) {
+          setAvailableCoupons(data.effective);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     try {
@@ -96,7 +110,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
 
-  const couponObj = couponCode ? COUPONS[couponCode.toUpperCase()] : undefined;
+  const couponObj = couponCode ? availableCoupons[couponCode.toUpperCase()] : undefined;
   const discount =
     couponObj && subtotal >= couponObj.minOrder
       ? Math.round((subtotal * couponObj.discountPercent) / 100)
@@ -108,9 +122,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const applyCoupon = (raw: string) => {
     const code = raw.trim().toUpperCase();
-    const found = COUPONS[code];
+    const found = availableCoupons[code];
     if (!found) {
-      return { ok: false, message: "Invalid code. Try EVOKA10 or REFILL15." };
+      return { ok: false, message: "Invalid coupon code." };
     }
     if (subtotal < found.minOrder) {
       return { ok: false, message: `Add ₹${found.minOrder - subtotal} more to unlock ${code}.` };

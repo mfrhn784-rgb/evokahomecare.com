@@ -19,6 +19,7 @@ import {
   AlertCircle,
   UserCheck,
   MapPin,
+  ShieldCheck,
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { BRAND } from "@/lib/brand";
@@ -105,22 +106,7 @@ export default function CheckoutPage() {
   const [profileHydrated, setProfileHydrated] = useState(false);
   const [loadedFromSaved, setLoadedFromSaved] = useState(false);
 
-  // Authenticated customer session & addresses
-  const [loggedInUserId, setLoggedInUserId] = useState<string | null>(null);
-  const [customerAddresses, setCustomerAddresses] = useState<CustomerAddress[]>([]);
-  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
-
-  const selectSavedAddress = (addr: CustomerAddress) => {
-    setSelectedAddressId(addr.id);
-    setLine1(addr.line1);
-    setLandmark(addr.landmark || "");
-    setCity(addr.city);
-    setState(addr.state);
-    setPincode(addr.pincode);
-    setLoadedFromSaved(true);
-  };
-
-  // Auto-load saved customer details on mount
+  // Auto-load saved customer details on mount using clean localStorage
   useEffect(() => {
     const saved = loadSavedProfile();
     if (saved) {
@@ -140,27 +126,6 @@ export default function CheckoutPage() {
         setLoadedFromSaved(true);
       }
     }
-
-    // Check if customer is logged in to fetch their saved addresses
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && data.authenticated && data.user) {
-          setLoggedInUserId(data.user.id);
-          if (data.user.name && !customerName) setCustomerName(data.user.name);
-          if (data.user.phone && !phone) setPhone(data.user.phone);
-          if (data.user.email && !email) setEmail(data.user.email);
-
-          const addrs: CustomerAddress[] = data.user.addresses || [];
-          setCustomerAddresses(addrs);
-          if (addrs.length > 0) {
-            const def = addrs.find((a) => a.isDefault) || addrs[0];
-            selectSavedAddress(def);
-          }
-        }
-      })
-      .catch(() => {});
-
     setProfileHydrated(true);
   }, []);
 
@@ -295,8 +260,9 @@ export default function CheckoutPage() {
       setError("Please enter your delivery address and a valid 6-digit PIN code.");
       return;
     }
-    if (paymentMethod === "upi" && upiReference.trim().length < 4) {
-      setError("Please enter your UPI Transaction Reference / UTR number before placing the order.");
+    if (paymentMethod === "upi" && !paymentScreenshot) {
+      setError("Payment screenshot is mandatory for UPI orders. Please upload your payment screenshot before placing order.");
+      setProofError("Payment screenshot is mandatory.");
       return;
     }
 
@@ -307,7 +273,6 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientRequestId,
-          userId: loggedInUserId || undefined,
           customerName,
           phone,
           email,
@@ -587,7 +552,7 @@ export default function CheckoutPage() {
                     type="text"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Ananya Nair"
+                    placeholder="Enter full name"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm focus:outline-none focus:border-[#184D3B]"
                   />
                 </div>
@@ -600,7 +565,7 @@ export default function CheckoutPage() {
                     type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="9876543210"
+                    placeholder="Enter 10-digit mobile number"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm focus:outline-none focus:border-[#184D3B]"
                   />
                 </div>
@@ -614,60 +579,13 @@ export default function CheckoutPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  placeholder="Enter email address (optional)"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm focus:outline-none focus:border-[#184D3B]"
                 />
               </div>
 
               {fulfillmentType === "delivery" && (
                 <>
-                  {/* Saved Addresses quick-selector if customer is logged in */}
-                  {customerAddresses.length > 0 && (
-                    <div className="p-3.5 rounded-xl bg-[#F6F7F4] border border-[#E5E8E3] space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#141A16] flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#154734]" />
-                          Select from Saved Addresses
-                        </span>
-                        <Link
-                          href="/account"
-                          className="text-[11px] font-bold text-[#154734] hover:underline"
-                        >
-                          Manage Addresses &rarr;
-                        </Link>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {customerAddresses.map((addr) => (
-                          <button
-                            key={addr.id}
-                            type="button"
-                            onClick={() => selectSavedAddress(addr)}
-                            className={`p-2.5 rounded-lg border text-left text-xs transition-all cursor-pointer ${
-                              selectedAddressId === addr.id
-                                ? "border-[#154734] bg-white ring-1 ring-[#154734]"
-                                : "border-[#E5E8E3] bg-white hover:border-[#154734]/40"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between font-bold text-[#141A16]">
-                              <span>{addr.label}</span>
-                              {addr.isDefault && (
-                                <span className="text-[10px] text-[#154734] bg-[#EBF5EE] px-1.5 py-0.5 rounded font-bold">
-                                  Default
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-[#5C6661] line-clamp-1 mt-0.5">
-                              {addr.line1}
-                            </p>
-                            <p className="text-[10px] text-[#5C6661]">
-                              {addr.city}, {addr.pincode}
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   <div>
                     <label className="block text-xs font-semibold text-[#5C6661] mb-1">
                       House / Flat / Street Address *
@@ -677,7 +595,7 @@ export default function CheckoutPage() {
                       type="text"
                       value={line1}
                       onChange={(e) => setLine1(e.target.value)}
-                      placeholder="House No, Street, Locality"
+                      placeholder="House / flat / street / building address"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm focus:outline-none focus:border-[#184D3B]"
                     />
                   </div>
@@ -688,6 +606,7 @@ export default function CheckoutPage() {
                         type="text"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
+                        placeholder="City / District"
                         className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm"
                       />
                     </div>
@@ -697,6 +616,7 @@ export default function CheckoutPage() {
                         type="text"
                         value={state}
                         onChange={(e) => setState(e.target.value)}
+                        placeholder="State"
                         className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm"
                       />
                     </div>
@@ -708,7 +628,7 @@ export default function CheckoutPage() {
                         maxLength={6}
                         value={pincode}
                         onChange={(e) => setPincode(e.target.value)}
-                        placeholder="695020"
+                        placeholder="Postal PIN code"
                         className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm"
                       />
                     </div>
@@ -721,7 +641,7 @@ export default function CheckoutPage() {
                       type="text"
                       value={landmark}
                       onChange={(e) => setLandmark(e.target.value)}
-                      placeholder="Near Pallichal Junction..."
+                      placeholder="Nearby landmark (optional)"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm"
                     />
                   </div>
@@ -736,7 +656,7 @@ export default function CheckoutPage() {
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Gate code, call before delivery, etc."
+                  placeholder="Any delivery instructions (optional)"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm"
                 />
               </div>
@@ -776,55 +696,56 @@ export default function CheckoutPage() {
                         </span>
                       </div>
                       <p className="text-xs text-[#5C6661] mt-0.5">
-                        Scan the QR code or pay to our UPI ID, then enter your transaction reference.
+                        Scan the official QR code with any UPI app. Transaction reference is optional.
                       </p>
                     </div>
                   </label>
 
                   {paymentMethod === "upi" && (
                     <div className="px-4 pb-5 pt-2 border-t border-[#E5E8E3] space-y-4">
+                      {/* Safety Assurance Banner */}
+                      <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-[11px] text-emerald-950 flex items-start gap-2.5">
+                        <ShieldCheck className="w-4 h-4 text-[#154734] shrink-0 mt-0.5" />
+                        <div className="space-y-0.5 text-xs">
+                          <p className="font-bold text-[#154734]">100% Secure Direct UPI Payment</p>
+                          <p className="text-[#5C6661] text-[11px] leading-relaxed">
+                            Pay directly to official merchant ID <strong className="text-[#141A16] font-mono">{BRAND.upi.id}</strong>. EVOKA never asks for your UPI PIN or banking passwords.
+                          </p>
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-white rounded-xl p-4 border border-[#E5E8E3]">
                         <div className="flex flex-col items-center justify-center">
-                          {BRAND.upi.qrImage ? (
+                          <div className="p-2 bg-white rounded-xl border border-[#E5E8E3] shadow-sm">
                             <img
-                              src={BRAND.upi.qrImage}
-                              alt="EVOKA UPI QR Code"
-                              className="w-40 h-40 object-contain rounded-lg border border-[#E5E8E3]"
+                              src={BRAND.upi.qrImage || "/images/evoka-upi-qr.jpg"}
+                              alt="EVOKA Official UPI Scanner QR"
+                              className="w-48 h-auto max-h-56 object-contain rounded-lg"
                             />
-                          ) : qrDataUrl ? (
-                            <img
-                              src={qrDataUrl}
-                              alt="EVOKA UPI QR Code"
-                              className="w-40 h-40 object-contain rounded-lg border border-[#E5E8E3]"
-                            />
-                          ) : (
-                            <div className="w-40 h-40 rounded-lg bg-[#F4F6F4] flex items-center justify-center text-xs text-[#5C6661]">
-                              Generating QR...
-                            </div>
-                          )}
-                          <span className="text-[11px] font-semibold text-[#5C6661] mt-1.5">
-                            Scan &amp; Pay Exact Amount: <strong className="text-[#121614]">₹{effectiveTotal}</strong>
+                          </div>
+                          <span className="text-[11px] font-bold text-[#154734] mt-2 text-center">
+                            Scan &amp; Pay Exact: <strong className="text-sm font-extrabold text-[#141A16]">₹{effectiveTotal}</strong>
                           </span>
                         </div>
 
                         <div className="space-y-3">
                           <div>
-                            <p className="text-[11px] uppercase tracking-wider font-bold text-[#5C6661]">
-                              Merchant UPI ID
+                            <p className="text-[10px] uppercase tracking-wider font-extrabold text-[#5C6661]">
+                              Official Merchant UPI ID
                             </p>
                             <div className="mt-1 flex items-center gap-2">
-                              <code className="flex-1 px-3 py-2 rounded-lg bg-[#F4F6F4] border border-[#E5E8E3] text-xs font-bold text-[#121614] truncate">
+                              <code className="flex-1 px-3 py-2.5 rounded-xl bg-[#F4F6F4] border border-[#E5E8E3] text-xs font-mono font-bold text-[#121614] select-all truncate">
                                 {BRAND.upi.id}
                               </code>
                               <button
                                 type="button"
                                 onClick={handleCopyUpi}
-                                className="px-3 py-2 rounded-lg border border-[#E5E8E3] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#121614] inline-flex items-center gap-1 cursor-pointer"
+                                className="px-3 py-2.5 rounded-xl border border-[#E5E8E3] bg-white hover:bg-[#F4F6F4] text-xs font-bold text-[#121614] inline-flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
                               >
                                 {copiedUpi ? (
                                   <>
                                     <Check className="w-3.5 h-3.5 text-[#184D3B]" />
-                                    <span>Copied</span>
+                                    <span>Copied!</span>
                                   </>
                                 ) : (
                                   <>
@@ -836,13 +757,27 @@ export default function CheckoutPage() {
                             </div>
                           </div>
 
-                          <div className="rounded-lg bg-[#F9FAF8] border border-[#E5E8E3] p-2.5 text-xs">
-                            <p className="text-[#5C6661]">Payable Amount</p>
-                            <p className="text-lg font-extrabold text-[#184D3B]">₹{effectiveTotal}</p>
+                          <div className="rounded-xl bg-[#F9FAF8] border border-[#E5E8E3] p-3 flex items-center justify-between">
+                            <div>
+                              <p className="text-[11px] text-[#5C6661] font-semibold">Total Payable Amount</p>
+                              <p className="text-xl font-extrabold text-[#184D3B]">₹{effectiveTotal}</p>
+                            </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold uppercase">
+                              Zero Surcharge
+                            </span>
                           </div>
 
-                          <p className="text-[11px] text-[#5C6661] leading-relaxed">
-                            Order status starts as <strong>PAYMENT_UNDER_REVIEW</strong> until our team confirms funds in the bank.
+                          {/* 1-Click Pay for Mobile Devices */}
+                          <a
+                            href={`upi://pay?pa=${encodeURIComponent(BRAND.upi.id)}&pn=${encodeURIComponent(BRAND.upi.payeeName)}&am=${effectiveTotal}&cu=INR&tn=${encodeURIComponent("EVOKA Order Payment")}`}
+                            className="w-full py-2.5 px-3 rounded-xl bg-[#154734] text-white text-xs font-bold hover:bg-[#1E6B4B] transition-colors flex items-center justify-center gap-2 text-center shadow-sm"
+                          >
+                            <QrCode className="w-4 h-4 text-[#E5A91A]" />
+                            <span>Pay via GPay / PhonePe / Paytm App</span>
+                          </a>
+
+                          <p className="text-[10px] text-[#5C6661] leading-relaxed">
+                            Order is initially placed as <strong>PAYMENT_UNDER_REVIEW</strong> and confirmed upon actual receipt of bank funds.
                           </p>
                         </div>
                       </div>
@@ -851,45 +786,61 @@ export default function CheckoutPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-bold text-[#121614] mb-1">
-                            UPI Transaction Reference / UTR *
+                            UPI Transaction Reference / UTR <span className="text-[#5C6661] font-normal">(optional)</span>
                           </label>
                           <input
                             type="text"
-                            required={paymentMethod === "upi"}
                             value={upiReference}
                             onChange={(e) => setUpiReference(e.target.value)}
-                            placeholder="e.g. 431209876543"
+                            placeholder="12-digit UTR number (optional)"
                             className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#E5E8E3] text-sm font-mono focus:outline-none focus:border-[#184D3B]"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-bold text-[#121614] mb-1">
-                            Payment Screenshot (optional)
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-xs font-bold text-[#121614]">
+                              Payment Screenshot <span className="text-red-600 font-bold">* (Mandatory)</span>
+                            </label>
+                            {paymentScreenshot && (
+                              <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                ✓ Attached
+                              </span>
+                            )}
+                          </div>
                           {paymentScreenshot ? (
-                            <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white border border-[#E5E8E3]">
+                            <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white border-2 border-emerald-500/50 shadow-sm">
                               <img
                                 src={paymentScreenshot}
                                 alt="Uploaded payment proof"
-                                className="w-10 h-10 rounded-lg object-cover border border-[#E5E8E3]"
+                                className="w-11 h-11 rounded-lg object-cover border border-[#E5E8E3]"
                               />
-                              <span className="text-xs font-medium text-[#184D3B] flex-1 truncate">
-                                Screenshot attached
-                              </span>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-semibold text-[#184D3B] block truncate">
+                                  Screenshot verified & attached
+                                </span>
+                                <span className="text-[10px] text-[#5C6661] block">
+                                  Tap place order to finish
+                                </span>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => setPaymentScreenshot("")}
-                                className="p-1 text-[#5C6661] hover:text-red-600 cursor-pointer"
-                                title="Remove screenshot"
+                                className="p-1.5 text-[#5C6661] hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
+                                title="Remove and replace screenshot"
                               >
                                 <X className="w-4 h-4" />
                               </button>
                             </div>
                           ) : (
-                            <label className="flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-dashed border-[#C7D0C9] hover:border-[#184D3B] text-xs font-semibold text-[#5C6661] hover:text-[#184D3B] cursor-pointer transition-colors">
-                              <Upload className="w-4 h-4" />
-                              <span>{uploadingProof ? "Uploading..." : "Upload Screenshot (JPG/PNG)"}</span>
+                            <label className="flex flex-col items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-amber-50/50 border-2 border-dashed border-amber-300 hover:border-[#184D3B] text-xs font-semibold text-[#184D3B] cursor-pointer transition-all text-center group">
+                              <div className="flex items-center gap-1.5">
+                                <Upload className="w-4 h-4 text-[#184D3B] group-hover:scale-110 transition-transform" />
+                                <span>{uploadingProof ? "Uploading..." : "Upload Payment Screenshot"}</span>
+                              </div>
+                              <span className="text-[10px] text-amber-800 font-medium">
+                                Mandatory: Upload photo/screenshot of successful UPI payment
+                              </span>
                               <input
                                 type="file"
                                 accept="image/png,image/jpeg,image/webp"
@@ -900,7 +851,10 @@ export default function CheckoutPage() {
                             </label>
                           )}
                           {proofError && (
-                            <p className="text-[11px] text-red-600 font-medium mt-1">{proofError}</p>
+                            <p className="text-[11px] text-red-600 font-semibold mt-1.5 flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                              <span>{proofError}</span>
+                            </p>
                           )}
                         </div>
                       </div>

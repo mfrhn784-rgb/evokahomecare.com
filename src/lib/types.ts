@@ -81,6 +81,15 @@ export interface PendingOtp {
   createdAt: number;
 }
 
+export interface PromoCoupon {
+  code: string;
+  discountPercent: number;
+  minOrder: number;
+  description?: string;
+  active: boolean;
+  createdAt?: string;
+}
+
 export type OrderStatus =
   | "PENDING_CONFIRMATION"
   | "Pending"

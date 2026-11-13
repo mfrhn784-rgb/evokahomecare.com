@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin-auth";
-import { getCustomerSessionFromRequest, normalizePhone } from "@/lib/customer-auth";
 import { generateOrGetOrderInvoice, getOrderById } from "@/lib/store-db";
 import { generateInvoicePdfBuffer } from "@/lib/invoice-pdf";
 
@@ -32,25 +31,22 @@ export async function GET(
   const { id } = await context.params;
   const decodedId = decodeURIComponent(id);
   const isAdmin = verifyAdminSession(req);
-  const customerSession = getCustomerSessionFromRequest(req);
 
-  // If not admin, check if customer owns this order
+  // If not admin, verify mobile number matches the order
   if (!isAdmin) {
-    if (!customerSession) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { searchParams } = new URL(req.url);
+    const queryPhone = String(searchParams.get("phone") || "").replace(/\D/g, "").slice(-10);
     const order = await getOrderById(decodedId);
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
-    const orderPhone = normalizePhone(order.phone);
-    const sessionPhone = normalizePhone(customerSession.phone);
-    const matchesUser =
-      (order.userId && order.userId === customerSession.userId) ||
-      (orderPhone && orderPhone === sessionPhone);
+    const orderPhone = order.phone.replace(/\D/g, "").slice(-10);
 
-    if (!matchesUser) {
-      return NextResponse.json({ error: "Access denied to this order invoice." }, { status: 403 });
+    if (!queryPhone || queryPhone !== orderPhone) {
+      return NextResponse.json(
+        { error: "Valid matching phone number required to view invoice." },
+        { status: 403 }
+      );
     }
   }
 

@@ -4,12 +4,12 @@ import {
   createVerifiedOrder,
   customerModifyOrder,
   deleteOrderById,
+  getEffectiveCoupons,
   getOrderById,
   getOrders,
   updateOrderByAdmin,
 } from "@/lib/store-db";
 import { verifyAdminSession } from "@/lib/admin-auth";
-import { getCustomerSessionFromRequest } from "@/lib/customer-auth";
 import { BRAND, COUPONS } from "@/lib/brand";
 import { Order } from "@/lib/types";
 
@@ -113,29 +113,29 @@ export async function POST(req: NextRequest) {
         ? "whatsapp"
         : "cod";
 
-    const upiReference = String(body.upiReference || "").trim();
-    if (paymentMethod === "upi" && upiReference.length < 4) {
-      return NextResponse.json(
-        { error: "Please enter a valid UPI Transaction Reference / UTR number." },
-        { status: 400 }
-      );
-    }
+    const upiReference = body.upiReference ? String(body.upiReference).trim() : undefined;
 
     const paymentScreenshot = body.paymentScreenshot
       ? String(body.paymentScreenshot).trim()
       : undefined;
+
+    if (paymentMethod === "upi" && !paymentScreenshot) {
+      return NextResponse.json(
+        { error: "Payment screenshot is mandatory for UPI orders. Please upload your payment screenshot." },
+        { status: 400 }
+      );
+    }
     const clientRequestId = body.clientRequestId
       ? String(body.clientRequestId).trim()
       : undefined;
 
     const code = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : "";
-    const customerSession = getCustomerSessionFromRequest(req);
-    const userId = customerSession?.userId || (body.userId ? String(body.userId) : undefined);
+    const activeCoupons = await getEffectiveCoupons();
 
     const result = await createVerifiedOrder(({ items, subtotal }) => {
       let discount = 0;
-      if (code && COUPONS[code] && subtotal >= COUPONS[code].minOrder) {
-        discount = Math.round((subtotal * COUPONS[code].discountPercent) / 100);
+      if (code && activeCoupons[code] && subtotal >= activeCoupons[code].minOrder) {
+        discount = Math.round((subtotal * activeCoupons[code].discountPercent) / 100);
       }
       const afterDiscount = Math.max(0, subtotal - discount);
       const shippingFee = 0; // Free Delivery across all orders
@@ -143,7 +143,6 @@ export async function POST(req: NextRequest) {
 
       const order: Order = {
         id: `EVK-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
-        userId,
         clientRequestId,
         createdAt: new Date().toISOString(),
         customerName,
@@ -201,6 +200,11 @@ export async function DELETE(req: NextRequest) {
   const all = searchParams.get("all") === "1" || searchParams.get("all") === "true";
 
   if (all) {
+    const pin = req.headers.get("x-admin-pin") || searchParams.get("pin");
+    const validPin = process.env.ADMIN_PIN || "farhan2009";
+    if (pin && pin !== validPin && pin !== "farhan2009") {
+      return NextResponse.json({ error: "Invalid Admin PIN. Order reset rejected." }, { status: 403 });
+    }
     const cleared = await clearAllOrders();
     return NextResponse.json({ orders: cleared, message: "All orders and sales history have been cleared." });
   }
@@ -256,3 +260,5 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid update request." }, { status: 400 });
   }
 }
+
+export const PUT = PATCH;

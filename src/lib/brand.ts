@@ -17,9 +17,9 @@ export const BRAND = {
   flatShippingFee: 0,
   enableOnlinePay: process.env.NEXT_PUBLIC_ENABLE_ONLINE_PAY === "true",
   upi: {
-    id: process.env.NEXT_PUBLIC_UPI_ID || "evokacleanings@okaxis",
+    id: process.env.NEXT_PUBLIC_UPI_ID || "m.farhan.741@fam",
     payeeName: process.env.NEXT_PUBLIC_UPI_PAYEE_NAME || "EVOKA Home & Personal Care",
-    qrImage: process.env.NEXT_PUBLIC_UPI_QR_IMAGE || "",
+    qrImage: process.env.NEXT_PUBLIC_UPI_QR_IMAGE || "/images/evoka-upi-qr.jpg",
   },
   business: {
     legalName: process.env.NEXT_PUBLIC_BUSINESS_LEGAL_NAME || "EVOKA Home & Personal Care",

@@ -1,8 +1,8 @@
 import fs from "fs";
 import path from "path";
-import { CustomerAddress, CustomerUser, Order, OrderInvoice, PaymentStatus, PendingOtp, Product } from "./types";
+import { CustomerAddress, CustomerUser, Order, OrderInvoice, PaymentStatus, PendingOtp, Product, PromoCoupon } from "./types";
 import { SEED_PRODUCTS } from "./seed-products";
-import { BRAND } from "./brand";
+import { BRAND, COUPONS } from "./brand";
 import { getEvokaBlobStore, isBlobsRuntime } from "./netlify-blobs-helper";
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -15,6 +15,7 @@ interface StoreData {
   users?: CustomerUser[];
   otps?: PendingOtp[];
   invoiceSeq?: number;
+  coupons?: PromoCoupon[];
 }
 
 function readLocalSeed(): StoreData {
@@ -31,6 +32,7 @@ function readLocalSeed(): StoreData {
         users: Array.isArray(parsed.users) ? parsed.users : [],
         otps: Array.isArray(parsed.otps) ? parsed.otps : [],
         invoiceSeq: typeof parsed.invoiceSeq === "number" ? parsed.invoiceSeq : 0,
+        coupons: Array.isArray(parsed.coupons) ? parsed.coupons : [],
       };
     }
   } catch {
@@ -42,6 +44,7 @@ function readLocalSeed(): StoreData {
     users: [],
     otps: [],
     invoiceSeq: 0,
+    coupons: [],
   };
 }
 
@@ -355,7 +358,12 @@ export async function updateOrderByAdmin(
     }
     order.status = updates.status;
   }
-  if (updates.paymentStatus) order.paymentStatus = updates.paymentStatus;
+  if (updates.paymentStatus) {
+    order.paymentStatus = updates.paymentStatus;
+  }
+  if (order.invoice) {
+    order.invoice.paymentStatus = order.paymentStatus;
+  }
   if (typeof updates.trackingNumber === "string") order.trackingNumber = updates.trackingNumber.trim();
   if (typeof updates.courierName === "string") order.courierName = updates.courierName.trim();
   order.updatedAt = new Date().toISOString();
@@ -417,8 +425,12 @@ export async function generateOrGetOrderInvoice(
     };
   }
 
-  // Regeneration preserves original invoice number & financial snapshot
+  // Regeneration preserves original invoice number & financial snapshot while syncing latest payment status
   if (order.invoice) {
+    if (order.invoice.paymentStatus !== order.paymentStatus) {
+      order.invoice.paymentStatus = order.paymentStatus;
+      await writeFullStore(store);
+    }
     return { ok: true, order, invoice: order.invoice, newlyGenerated: false };
   }
 
@@ -681,4 +693,67 @@ export async function setDefaultCustomerAddress(userId: string, addressId: strin
   user.updatedAt = new Date().toISOString();
   await writeFullStore(store);
   return true;
+}
+
+// -------------------------------------------------------------
+// Custom Owner Promo Coupon Database Helpers
+// -------------------------------------------------------------
+
+export async function getStoreCoupons(): Promise<PromoCoupon[]> {
+  const store = await readStore();
+  return store.coupons || [];
+}
+
+export async function upsertStoreCoupon(coupon: PromoCoupon): Promise<PromoCoupon[]> {
+  const store = await readStore();
+  if (!store.coupons) store.coupons = [];
+  const cleanCode = coupon.code.trim().toUpperCase();
+  const normalized: PromoCoupon = {
+    code: cleanCode,
+    discountPercent: Math.min(100, Math.max(1, Math.round(Number(coupon.discountPercent) || 10))),
+    minOrder: Math.max(0, Math.round(Number(coupon.minOrder) || 0)),
+    description: coupon.description?.trim() || undefined,
+    active: coupon.active !== false,
+    createdAt: coupon.createdAt || new Date().toISOString(),
+  };
+
+  const idx = store.coupons.findIndex((c) => c.code.toUpperCase() === cleanCode);
+  if (idx >= 0) {
+    store.coupons[idx] = normalized;
+  } else {
+    store.coupons.push(normalized);
+  }
+  await writeFullStore(store);
+  return store.coupons;
+}
+
+export async function deleteStoreCoupon(code: string): Promise<PromoCoupon[]> {
+  const store = await readStore();
+  if (!store.coupons) store.coupons = [];
+  const cleanCode = code.trim().toUpperCase();
+  store.coupons = store.coupons.filter((c) => c.code.toUpperCase() !== cleanCode);
+  await writeFullStore(store);
+  return store.coupons;
+}
+
+export async function getEffectiveCoupons(): Promise<
+  Record<string, { discountPercent: number; minOrder: number; label: string }>
+> {
+  const store = await readStore();
+  // Start with built-in brand coupons
+  const effective: Record<string, { discountPercent: number; minOrder: number; label: string }> = {
+    ...COUPONS,
+  };
+
+  // Merge active custom store coupons
+  for (const c of store.coupons || []) {
+    if (c.active) {
+      effective[c.code.toUpperCase()] = {
+        discountPercent: c.discountPercent,
+        minOrder: c.minOrder,
+        label: c.description || `${c.discountPercent}% OFF (Min ₹${c.minOrder})`,
+      };
+    }
+  }
+  return effective;
 }

@@ -44,6 +44,43 @@ export interface CartItem {
   slug: string;
 }
 
+export interface CustomerAddress {
+  id: string;
+  label: "Home" | "Work" | "Other" | string;
+  line1: string;
+  landmark?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  isDefault?: boolean;
+}
+
+export interface CustomerUser {
+  id: string; // e.g. "usr_..."
+  name: string;
+  phone: string; // normalized 10 digits
+  email?: string;
+  passwordHash?: string; // salt$hash
+  addresses: CustomerAddress[];
+  defaultAddressId?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AuthSession {
+  userId: string;
+  phone: string;
+  name: string;
+  email?: string;
+}
+
+export interface PendingOtp {
+  phone: string;
+  otp: string;
+  expiresAt: number; // timestamp ms
+  createdAt: number;
+}
+
 export type OrderStatus =
   | "PENDING_CONFIRMATION"
   | "Pending"
@@ -80,6 +117,7 @@ export interface OrderInvoice {
 
 export interface Order {
   id: string;
+  userId?: string;
   clientRequestId?: string;
   createdAt: string;
   updatedAt?: string;

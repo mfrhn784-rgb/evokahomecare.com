@@ -9,6 +9,7 @@ import {
   updateOrderByAdmin,
 } from "@/lib/store-db";
 import { verifyAdminSession } from "@/lib/admin-auth";
+import { getCustomerSessionFromRequest } from "@/lib/customer-auth";
 import { BRAND, COUPONS } from "@/lib/brand";
 import { Order } from "@/lib/types";
 
@@ -128,6 +129,8 @@ export async function POST(req: NextRequest) {
       : undefined;
 
     const code = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : "";
+    const customerSession = getCustomerSessionFromRequest(req);
+    const userId = customerSession?.userId || (body.userId ? String(body.userId) : undefined);
 
     const result = await createVerifiedOrder(({ items, subtotal }) => {
       let discount = 0;
@@ -140,6 +143,7 @@ export async function POST(req: NextRequest) {
 
       const order: Order = {
         id: `EVK-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+        userId,
         clientRequestId,
         createdAt: new Date().toISOString(),
         customerName,

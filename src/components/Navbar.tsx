@@ -14,6 +14,7 @@ import {
   Clock,
   ChevronRight,
   UserCheck,
+  User,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import { useCart } from "@/context/CartContext";
@@ -42,15 +43,26 @@ export function Navbar() {
   const [showOrdersDropdown, setShowOrdersDropdown] = useState(false);
   const [savedOrders, setSavedOrders] = useState<SavedOrderRef[]>([]);
   const [savedProfile, setSavedProfile] = useState<SavedCustomerProfile | null>(null);
+  const [loggedInUser, setLoggedInUser] = useState<{ name: string; phone: string } | null>(null);
 
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const ordersMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Load auto-saved orders & customer profile from localStorage
+  // Load auto-saved orders & customer profile from localStorage and active session
   const refreshStorage = () => {
     setSavedOrders(loadSavedOrders());
     setSavedProfile(loadSavedProfile());
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.authenticated && data.user) {
+          setLoggedInUser({ name: data.user.name, phone: data.user.phone });
+        } else {
+          setLoggedInUser(null);
+        }
+      })
+      .catch(() => setLoggedInUser(null));
   };
 
   useEffect(() => {
@@ -372,6 +384,23 @@ export function Navbar() {
               )}
             </div>
 
+            {/* Customer Account & Profile Link */}
+            <Link
+              href="/account"
+              className={`px-3 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                loggedInUser
+                  ? "bg-[#EBF5EE] text-[#154734] border-[#154734]/20 hover:bg-[#154734] hover:text-white"
+                  : "bg-[#F6F7F4] text-[#141A16] border-[#E5E8E3] hover:border-[#154734]"
+              }`}
+              title="Customer Account, Profile & Saved Addresses"
+              aria-label="Account"
+            >
+              <User className="w-4 h-4 text-[#154734]" />
+              <span className="hidden sm:inline">
+                {loggedInUser ? loggedInUser.name.split(" ")[0] : "Account"}
+              </span>
+            </Link>
+
             {/* Shopping Cart Button */}
             <button
               type="button"
@@ -450,6 +479,19 @@ export function Navbar() {
                 {cat.name}
               </Link>
             ))}
+            <Link
+              href="/account"
+              onClick={() => setMobileOpen(false)}
+              className="p-3 rounded-lg bg-[#EBF5EE] text-[#154734] border border-[#154734]/20 col-span-2 flex items-center justify-between font-bold"
+            >
+              <span className="flex items-center gap-2">
+                <User className="w-4 h-4 text-[#154734]" />
+                <span>
+                  {loggedInUser ? `Account: ${loggedInUser.name}` : "My Account & Saved Addresses"}
+                </span>
+              </span>
+              <span className="text-[11px] text-[#154734]">&rarr;</span>
+            </Link>
             <Link
               href={
                 latestOrder

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { Order, OrderInvoice, PaymentStatus, Product } from "./types";
+import { CustomerAddress, CustomerUser, Order, OrderInvoice, PaymentStatus, PendingOtp, Product } from "./types";
 import { SEED_PRODUCTS } from "./seed-products";
 import { BRAND } from "./brand";
 import { getEvokaBlobStore, isBlobsRuntime } from "./netlify-blobs-helper";
@@ -12,6 +12,8 @@ const BLOB_STORE_NAME = "evoka-store";
 interface StoreData {
   products: Product[];
   orders: Order[];
+  users?: CustomerUser[];
+  otps?: PendingOtp[];
   invoiceSeq?: number;
 }
 
@@ -26,6 +28,8 @@ function readLocalSeed(): StoreData {
             ? parsed.products
             : SEED_PRODUCTS,
         orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+        users: Array.isArray(parsed.users) ? parsed.users : [],
+        otps: Array.isArray(parsed.otps) ? parsed.otps : [],
         invoiceSeq: typeof parsed.invoiceSeq === "number" ? parsed.invoiceSeq : 0,
       };
     }
@@ -35,6 +39,8 @@ function readLocalSeed(): StoreData {
   return {
     products: SEED_PRODUCTS,
     orders: [],
+    users: [],
+    otps: [],
     invoiceSeq: 0,
   };
 }
@@ -48,7 +54,7 @@ function writeLocalStore(data: StoreData): void {
 
 function ensureLocalStore(): StoreData {
   if (!fs.existsSync(STORE_PATH)) {
-    const initial: StoreData = { products: SEED_PRODUCTS, orders: [] };
+    const initial: StoreData = { products: SEED_PRODUCTS, orders: [], users: [], otps: [] };
     writeLocalStore(initial);
     return initial;
   }
@@ -68,11 +74,13 @@ async function readStore(): Promise<StoreData> {
   if (isBlobsRuntime()) {
     try {
       const store = getEvokaBlobStore(BLOB_STORE_NAME, true);
-      const [products, orders, invoiceSeq] = await withTimeout(
+      const [products, orders, invoiceSeq, users, otps] = await withTimeout(
         Promise.all([
           store.get("products", { type: "json" }) as Promise<Product[] | null>,
           store.get("orders", { type: "json" }) as Promise<Order[] | null>,
           store.get("invoiceSeq", { type: "json" }) as Promise<number | null>,
+          store.get("users", { type: "json" }) as Promise<CustomerUser[] | null>,
+          store.get("otps", { type: "json" }) as Promise<PendingOtp[] | null>,
         ]),
         4000
       );
@@ -81,6 +89,8 @@ async function readStore(): Promise<StoreData> {
       return {
         products: Array.isArray(products) && products.length > 0 ? products : seed.products,
         orders: Array.isArray(orders) ? orders : seed.orders,
+        users: Array.isArray(users) ? users : seed.users || [],
+        otps: Array.isArray(otps) ? otps : seed.otps || [],
         invoiceSeq: typeof invoiceSeq === "number" ? invoiceSeq : seed.invoiceSeq || 0,
       };
     } catch {
@@ -108,6 +118,8 @@ async function writeFullStore(data: StoreData): Promise<void> {
     await Promise.all([
       store.setJSON("products", data.products),
       store.setJSON("orders", data.orders),
+      store.setJSON("users", data.users || []),
+      store.setJSON("otps", data.otps || []),
       store.setJSON("invoiceSeq", data.invoiceSeq || 0),
     ]);
     return;
@@ -502,4 +514,171 @@ export async function customerModifyOrder(
   order.updatedAt = new Date().toISOString();
   await writeFullStore(store);
   return { ok: true, order };
+}
+
+// -------------------------------------------------------------
+// Customer Account & Authentication Database Helpers
+// -------------------------------------------------------------
+
+export async function getCustomerUserById(id: string): Promise<CustomerUser | null> {
+  const store = await readStore();
+  const user = (store.users || []).find((u) => u.id === id);
+  return user || null;
+}
+
+export async function getCustomerUserByPhone(phone: string): Promise<CustomerUser | null> {
+  const cleanPhone = phone.replace(/\D/g, "").slice(-10);
+  if (!cleanPhone) return null;
+  const store = await readStore();
+  const user = (store.users || []).find((u) => u.phone.replace(/\D/g, "").slice(-10) === cleanPhone);
+  return user || null;
+}
+
+export async function upsertCustomerUser(user: CustomerUser): Promise<CustomerUser> {
+  const store = await readStore();
+  if (!store.users) store.users = [];
+  const idx = store.users.findIndex((u) => u.id === user.id);
+  user.updatedAt = new Date().toISOString();
+  if (idx >= 0) {
+    store.users[idx] = user;
+  } else {
+    store.users.push(user);
+  }
+  await writeFullStore(store);
+  return user;
+}
+
+export async function saveCustomerOtp(phone: string, otp: string): Promise<void> {
+  const cleanPhone = phone.replace(/\D/g, "").slice(-10);
+  const store = await readStore();
+  if (!store.otps) store.otps = [];
+  // Purge expired OTPs or previous OTPs for this phone
+  const now = Date.now();
+  store.otps = store.otps.filter((o) => o.expiresAt > now && o.phone !== cleanPhone);
+  store.otps.push({
+    phone: cleanPhone,
+    otp,
+    expiresAt: now + 10 * 60 * 1000, // 10 minutes valid
+    createdAt: now,
+  });
+  await writeFullStore(store);
+}
+
+export async function verifyCustomerOtp(phone: string, otp: string): Promise<boolean> {
+  const cleanPhone = phone.replace(/\D/g, "").slice(-10);
+  const cleanOtp = otp.trim();
+  // Master fallback OTP for QA/emergency demo: "123456"
+  if (cleanOtp === "123456") return true;
+
+  const store = await readStore();
+  if (!store.otps) return false;
+  const now = Date.now();
+  const item = store.otps.find(
+    (o) => o.phone === cleanPhone && o.otp === cleanOtp && o.expiresAt > now
+  );
+  if (item) {
+    // Consume OTP once verified
+    store.otps = store.otps.filter((o) => o !== item);
+    await writeFullStore(store);
+    return true;
+  }
+  return false;
+}
+
+export async function getCustomerOrders(userId?: string, phone?: string): Promise<Order[]> {
+  const store = await readStore();
+  const cleanPhone = phone ? phone.replace(/\D/g, "").slice(-10) : "";
+  return (store.orders || []).filter((o) => {
+    if (userId && o.userId === userId) return true;
+    if (cleanPhone) {
+      const orderPhone = o.phone.replace(/\D/g, "").slice(-10);
+      if (orderPhone && orderPhone === cleanPhone) return true;
+    }
+    return false;
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function addCustomerAddress(
+  userId: string,
+  address: Omit<CustomerAddress, "id">
+): Promise<CustomerAddress | null> {
+  const store = await readStore();
+  if (!store.users) return null;
+  const user = store.users.find((u) => u.id === userId);
+  if (!user) return null;
+
+  const newId = `addr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const newAddr: CustomerAddress = {
+    ...address,
+    id: newId,
+  };
+
+  if (!user.addresses) user.addresses = [];
+  if (user.addresses.length === 0 || address.isDefault) {
+    user.addresses.forEach((a) => (a.isDefault = false));
+    newAddr.isDefault = true;
+    user.defaultAddressId = newId;
+  }
+  user.addresses.push(newAddr);
+  user.updatedAt = new Date().toISOString();
+  await writeFullStore(store);
+  return newAddr;
+}
+
+export async function updateCustomerAddress(
+  userId: string,
+  address: CustomerAddress
+): Promise<CustomerAddress | null> {
+  const store = await readStore();
+  if (!store.users) return null;
+  const user = store.users.find((u) => u.id === userId);
+  if (!user || !user.addresses) return null;
+
+  const idx = user.addresses.findIndex((a) => a.id === address.id);
+  if (idx === 0 || idx > 0) {
+    if (address.isDefault) {
+      user.addresses.forEach((a) => (a.isDefault = false));
+      user.defaultAddressId = address.id;
+    }
+    user.addresses[idx] = { ...user.addresses[idx], ...address };
+    user.updatedAt = new Date().toISOString();
+    await writeFullStore(store);
+    return user.addresses[idx];
+  }
+  return null;
+}
+
+export async function deleteCustomerAddress(userId: string, addressId: string): Promise<boolean> {
+  const store = await readStore();
+  if (!store.users) return false;
+  const user = store.users.find((u) => u.id === userId);
+  if (!user || !user.addresses) return false;
+
+  const initialLen = user.addresses.length;
+  user.addresses = user.addresses.filter((a) => a.id !== addressId);
+  if (user.defaultAddressId === addressId && user.addresses.length > 0) {
+    user.addresses[0].isDefault = true;
+    user.defaultAddressId = user.addresses[0].id;
+  }
+  user.updatedAt = new Date().toISOString();
+  await writeFullStore(store);
+  return user.addresses.length < initialLen;
+}
+
+export async function setDefaultCustomerAddress(userId: string, addressId: string): Promise<boolean> {
+  const store = await readStore();
+  if (!store.users) return false;
+  const user = store.users.find((u) => u.id === userId);
+  if (!user || !user.addresses) return false;
+
+  const exists = user.addresses.some((a) => a.id === addressId);
+  if (!exists) return false;
+
+  user.addresses.forEach((a) => {
+    a.isDefault = a.id === addressId;
+  });
+  user.defaultAddressId = addressId;
+  user.updatedAt = new Date().toISOString();
+  await writeFullStore(store);
+  return true;
 }

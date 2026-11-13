@@ -18,10 +18,11 @@ import {
   X,
   AlertCircle,
   UserCheck,
+  MapPin,
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { BRAND } from "@/lib/brand";
-import { Order } from "@/lib/types";
+import { CustomerAddress, Order } from "@/lib/types";
 import { SafeImage } from "@/components/SafeImage";
 import {
   clearSavedProfile,
@@ -104,6 +105,21 @@ export default function CheckoutPage() {
   const [profileHydrated, setProfileHydrated] = useState(false);
   const [loadedFromSaved, setLoadedFromSaved] = useState(false);
 
+  // Authenticated customer session & addresses
+  const [loggedInUserId, setLoggedInUserId] = useState<string | null>(null);
+  const [customerAddresses, setCustomerAddresses] = useState<CustomerAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+
+  const selectSavedAddress = (addr: CustomerAddress) => {
+    setSelectedAddressId(addr.id);
+    setLine1(addr.line1);
+    setLandmark(addr.landmark || "");
+    setCity(addr.city);
+    setState(addr.state);
+    setPincode(addr.pincode);
+    setLoadedFromSaved(true);
+  };
+
   // Auto-load saved customer details on mount
   useEffect(() => {
     const saved = loadSavedProfile();
@@ -124,6 +140,27 @@ export default function CheckoutPage() {
         setLoadedFromSaved(true);
       }
     }
+
+    // Check if customer is logged in to fetch their saved addresses
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.authenticated && data.user) {
+          setLoggedInUserId(data.user.id);
+          if (data.user.name && !customerName) setCustomerName(data.user.name);
+          if (data.user.phone && !phone) setPhone(data.user.phone);
+          if (data.user.email && !email) setEmail(data.user.email);
+
+          const addrs: CustomerAddress[] = data.user.addresses || [];
+          setCustomerAddresses(addrs);
+          if (addrs.length > 0) {
+            const def = addrs.find((a) => a.isDefault) || addrs[0];
+            selectSavedAddress(def);
+          }
+        }
+      })
+      .catch(() => {});
+
     setProfileHydrated(true);
   }, []);
 
@@ -270,6 +307,7 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientRequestId,
+          userId: loggedInUserId || undefined,
           customerName,
           phone,
           email,
@@ -583,6 +621,53 @@ export default function CheckoutPage() {
 
               {fulfillmentType === "delivery" && (
                 <>
+                  {/* Saved Addresses quick-selector if customer is logged in */}
+                  {customerAddresses.length > 0 && (
+                    <div className="p-3.5 rounded-xl bg-[#F6F7F4] border border-[#E5E8E3] space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-[#141A16] flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[#154734]" />
+                          Select from Saved Addresses
+                        </span>
+                        <Link
+                          href="/account"
+                          className="text-[11px] font-bold text-[#154734] hover:underline"
+                        >
+                          Manage Addresses &rarr;
+                        </Link>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {customerAddresses.map((addr) => (
+                          <button
+                            key={addr.id}
+                            type="button"
+                            onClick={() => selectSavedAddress(addr)}
+                            className={`p-2.5 rounded-lg border text-left text-xs transition-all cursor-pointer ${
+                              selectedAddressId === addr.id
+                                ? "border-[#154734] bg-white ring-1 ring-[#154734]"
+                                : "border-[#E5E8E3] bg-white hover:border-[#154734]/40"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between font-bold text-[#141A16]">
+                              <span>{addr.label}</span>
+                              {addr.isDefault && (
+                                <span className="text-[10px] text-[#154734] bg-[#EBF5EE] px-1.5 py-0.5 rounded font-bold">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-[#5C6661] line-clamp-1 mt-0.5">
+                              {addr.line1}
+                            </p>
+                            <p className="text-[10px] text-[#5C6661]">
+                              {addr.city}, {addr.pincode}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-semibold text-[#5C6661] mb-1">
                       House / Flat / Street Address *

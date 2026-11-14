@@ -105,10 +105,10 @@ export function Navbar() {
         <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 font-medium truncate">
             <span className="px-2 py-0.5 rounded bg-[#E5A91A] text-[#141A16] text-[10px] font-bold uppercase tracking-wide shrink-0">
-              Free Delivery
+              DIRECT FACTORY
             </span>
             <span className="truncate text-white/90">
-              No Minimum Order • Cash on Delivery &amp; UPI
+              Commercial-Grade Home &amp; Personal Care • Doorstep Delivery &amp; Outlet Pickup
             </span>
           </div>
 

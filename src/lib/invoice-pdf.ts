@@ -175,17 +175,33 @@ export async function generateInvoicePdfBuffer(
 
   ry -= 18;
 
+  const genDate = new Date(invoice.generatedAt || order.createdAt);
+  const formattedInvoiceDateTime = `${genDate.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })} at ${genDate.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })}`;
+
+  const orderDate = new Date(order.createdAt);
+  const formattedOrderDateTime = `${orderDate.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })} at ${orderDate.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })}`;
+
   const metaRows: [string, string][] = [
     ["Invoice No:", invoice.invoiceNumber],
-    [
-      "Invoice Date:",
-      new Date(invoice.generatedAt).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-    ],
+    ["Invoice Time:", formattedInvoiceDateTime],
     ["Order ID:", order.id],
+    ["Order Time:", formattedOrderDateTime],
     ["Payment Method:", invoice.paymentMethod],
     ["Payment Status:", displayPaymentStatus],
   ];
@@ -301,11 +317,13 @@ export async function generateInvoicePdfBuffer(
 
   // --- Table Helper ---
   const colX = {
-    idx: MARGIN + 6,
-    item: MARGIN + 30,
-    qty: MARGIN + 320,
-    unit: MARGIN + 370,
-    total: MARGIN + 448,
+    idx: MARGIN + 4,
+    item: MARGIN + 20,
+    qty: MARGIN + 202,
+    mrp: MARGIN + 238,
+    price: MARGIN + 300,
+    discount: MARGIN + 365,
+    total: MARGIN + 438,
   };
 
   const drawTableHeader = (targetPage: PDFPage, startY: number): number => {
@@ -319,26 +337,28 @@ export async function generateInvoicePdfBuffer(
       borderWidth: 0.75,
     });
     const ty = startY - 13;
-    targetPage.drawText("#", { x: colX.idx, y: ty, size: 8.5, font: fontBold, color: COLOR_DARK });
+    targetPage.drawText("#", { x: colX.idx, y: ty, size: 7.5, font: fontBold, color: COLOR_DARK });
     targetPage.drawText("PRODUCT & PACK VARIANT", {
       x: colX.item,
       y: ty,
-      size: 8.5,
+      size: 7.5,
       font: fontBold,
       color: COLOR_DARK,
     });
-    targetPage.drawText("QTY", { x: colX.qty, y: ty, size: 8.5, font: fontBold, color: COLOR_DARK });
-    targetPage.drawText("UNIT PRICE", {
-      x: colX.unit,
+    targetPage.drawText("QTY", { x: colX.qty, y: ty, size: 7.5, font: fontBold, color: COLOR_DARK });
+    targetPage.drawText("MRP", { x: colX.mrp, y: ty, size: 7.5, font: fontBold, color: COLOR_DARK });
+    targetPage.drawText("PRICE", { x: colX.price, y: ty, size: 7.5, font: fontBold, color: COLOR_DARK });
+    targetPage.drawText("DISCOUNT", {
+      x: colX.discount,
       y: ty,
-      size: 8.5,
+      size: 7.5,
       font: fontBold,
       color: COLOR_DARK,
     });
     targetPage.drawText("LINE TOTAL", {
       x: colX.total,
       y: ty,
-      size: 8.5,
+      size: 7.5,
       font: fontBold,
       color: COLOR_DARK,
     });
@@ -349,8 +369,8 @@ export async function generateInvoicePdfBuffer(
 
   // --- Table Rows (with multi-page overflow) ---
   order.items.forEach((item, index) => {
-    const itemLines = wrapLines(`${item.name} (${item.variantLabel})`, fontRegular, 9, 275);
-    const rowHeight = Math.max(22, itemLines.length * 12 + 8);
+    const itemLines = wrapLines(`${item.name} (${item.variantLabel})`, fontRegular, 8.5, 175);
+    const rowHeight = Math.max(22, itemLines.length * 11.5 + 8);
 
     if (y - rowHeight < 130) {
       page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
@@ -376,11 +396,11 @@ export async function generateInvoicePdfBuffer(
       });
     }
 
-    const textY = y - 14;
+    const textY = y - 13;
     page.drawText(String(index + 1), {
       x: colX.idx,
       y: textY,
-      size: 8.5,
+      size: 8,
       font: fontRegular,
       color: COLOR_MUTED,
     });
@@ -388,31 +408,57 @@ export async function generateInvoicePdfBuffer(
     itemLines.forEach((line, li) => {
       page.drawText(line, {
         x: colX.item,
-        y: textY - li * 11.5,
-        size: 9,
+        y: textY - li * 11,
+        size: 8.5,
         font: li === 0 ? fontBold : fontRegular,
         color: COLOR_DARK,
       });
     });
 
     page.drawText(String(item.quantity), {
-      x: colX.qty + 4,
+      x: colX.qty + 2,
       y: textY,
-      size: 9,
+      size: 8.5,
       font: fontRegular,
       color: COLOR_DARK,
     });
+
+    // Separate MRP Column
+    const itemMrp = item.mrp && item.mrp > item.price ? item.mrp : item.price;
+    page.drawText(formatINR(itemMrp), {
+      x: colX.mrp,
+      y: textY,
+      size: 8.5,
+      font: fontRegular,
+      color: COLOR_MUTED,
+    });
+
+    // Separate Price Column
     page.drawText(formatINR(item.price), {
-      x: colX.unit,
+      x: colX.price,
       y: textY,
-      size: 9,
-      font: fontRegular,
+      size: 8.5,
+      font: fontBold,
       color: COLOR_DARK,
     });
+
+    // Separate Discount Column
+    const perUnitDisc = Math.max(0, itemMrp - item.price);
+    const lineDiscount = perUnitDisc * item.quantity;
+    const discountText = lineDiscount > 0 ? formatINR(lineDiscount) : "-";
+    page.drawText(discountText, {
+      x: colX.discount,
+      y: textY,
+      size: 8.5,
+      font: fontRegular,
+      color: lineDiscount > 0 ? rgb(0.08, 0.55, 0.28) : COLOR_MUTED,
+    });
+
+    // Line Total
     page.drawText(formatINR(item.price * item.quantity), {
       x: colX.total,
       y: textY,
-      size: 9,
+      size: 8.5,
       font: fontBold,
       color: COLOR_DARK,
     });
@@ -464,8 +510,8 @@ export async function generateInvoicePdfBuffer(
     );
   }
   drawSummaryRow(
-    "Delivery Charges",
-    invoice.shippingFee === 0 ? "FREE (Rs. 0.00)" : formatINR(invoice.shippingFee)
+    order.fulfillmentType === "pickup" ? "Outlet Pickup" : "Delivery Charges",
+    invoice.shippingFee === 0 ? "Rs. 0.00 (Store Pickup)" : formatINR(invoice.shippingFee)
   );
   if (invoice.taxRatePercent > 0) {
     drawSummaryRow(
@@ -535,13 +581,13 @@ export async function generateInvoicePdfBuffer(
       color: COLOR_BORDER,
     });
     p.drawText(
-      "Thank you for choosing EVOKA Home & Personal Care! For support, contact us on WhatsApp or email.",
-      { x: MARGIN, y: footerY, size: 8, font: fontRegular, color: COLOR_MUTED }
+      "EVOKA Home & Personal Care • Support: +91 9143374741 • evokahomecare.com • Engineered by farspective.in",
+      { x: MARGIN, y: footerY, size: 7.5, font: fontRegular, color: COLOR_MUTED }
     );
     p.drawText(safeText(`Page ${idx + 1} of ${pages.length}`), {
       x: A4_WIDTH - MARGIN - 55,
       y: footerY,
-      size: 8,
+      size: 7.5,
       font: fontRegular,
       color: COLOR_MUTED,
     });

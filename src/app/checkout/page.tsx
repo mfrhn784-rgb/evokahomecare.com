@@ -60,7 +60,7 @@ function buildWhatsAppOrderMessage(order: Order): string {
     ``,
     `Subtotal: ₹${order.subtotal}`,
     order.discount > 0 ? `Discount: -₹${order.discount}` : null,
-    `Delivery Charges: FREE`,
+    `Delivery Charges: ${order.shippingFee > 0 ? `₹${order.shippingFee}` : "₹0 (Store Pickup)"}`,
     `Total Amount: *₹${order.total}*`,
     ``,
     paymentLine,
@@ -178,7 +178,20 @@ export default function CheckoutPage() {
     setNotes("");
   };
 
-  const effectiveShipping = 0;
+  const [deliveryFee, setDeliveryFee] = useState<number>(40);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.settings && typeof data.settings.deliveryCharge === "number") {
+          setDeliveryFee(data.settings.deliveryCharge);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const effectiveShipping = fulfillmentType === "pickup" ? 0 : deliveryFee;
   const effectiveTotal = Math.max(0, subtotal - discount) + effectiveShipping;
 
   const upiPayUri = useMemo(() => {
@@ -466,7 +479,7 @@ export default function CheckoutPage() {
             {/* 1. Fulfillment Mode */}
             <div className="bg-white rounded-2xl p-6 space-y-4 border border-[#E5E8E3]">
               <h2 className="text-base sm:text-lg font-bold text-[#121614]">
-                1. Delivery or Free Outlet Pickup
+                1. Delivery or Store Outlet Pickup
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
@@ -480,9 +493,9 @@ export default function CheckoutPage() {
                 >
                   <Truck className="w-5 h-5 text-[#184D3B] shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-bold text-sm text-[#121614]">Free Doorstep Delivery</p>
+                    <p className="font-bold text-sm text-[#121614]">Doorstep Delivery</p>
                     <p className="text-[11px] text-[#184D3B] font-semibold">
-                      ₹0 shipping on all orders
+                      ₹{deliveryFee} delivery charge
                     </p>
                   </div>
                 </button>
@@ -498,8 +511,8 @@ export default function CheckoutPage() {
                 >
                   <Store className="w-5 h-5 text-[#184D3B] shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-bold text-sm text-[#121614]">Free Outlet Pickup</p>
-                    <p className="text-[11px] text-[#5C6661]">Poovar Uchakkada or Pallichal Jn</p>
+                    <p className="font-bold text-sm text-[#121614]">Store Outlet Pickup</p>
+                    <p className="text-[11px] text-[#5C6661]">₹0 Pickup • Poovar or Pallichal</p>
                   </div>
                 </button>
               </div>
@@ -931,7 +944,7 @@ export default function CheckoutPage() {
               )}
               <div className="flex justify-between text-[#184D3B] font-bold">
                 <span>{fulfillmentType === "pickup" ? "Outlet Pickup" : "Doorstep Delivery"}</span>
-                <span>FREE</span>
+                <span>{effectiveShipping === 0 ? "FREE (₹0)" : `₹${effectiveShipping}`}</span>
               </div>
               <div className="flex justify-between text-base sm:text-lg font-bold text-[#121614] pt-2 border-t border-[#E5E8E3]">
                 <span>Total Payable</span>

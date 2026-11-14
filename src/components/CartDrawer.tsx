@@ -16,6 +16,7 @@ export function CartDrawer() {
     removeItem,
     subtotal,
     discount,
+    shippingFee,
     couponCode,
     applyCoupon,
     removeCoupon,
@@ -68,12 +69,13 @@ export function CartDrawer() {
           </button>
         </div>
 
-        {/* Free Shipping Highlight Bar */}
-        <div className="px-6 py-3 bg-gradient-to-r from-mint-light via-ice to-mint-light border-b border-mint/20 flex items-center gap-2">
-          <Truck className="w-4 h-4 text-emerald-vibrant shrink-0" />
-          <p className="text-xs font-bold text-emerald-deep">
-            ✓ 100% FREE Doorstep Delivery on this order!
-          </p>
+        {/* Fast Delivery Highlight Bar */}
+        <div className="px-6 py-2.5 bg-[#F4F8F6] border-b border-[#E5E8E3] flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 font-medium text-[#184D3B]">
+            <Truck className="w-3.5 h-3.5 shrink-0" />
+            <span>Doorstep Delivery &amp; Store Pickup</span>
+          </div>
+          <span className="text-[11px] text-[#5C6661]">Trivandrum</span>
         </div>
 
         {/* Cart Items */}
@@ -217,8 +219,8 @@ export function CartDrawer() {
                 </div>
               )}
               <div className="flex justify-between">
-                <span>Delivery</span>
-                <span className="text-emerald-vibrant font-bold">FREE</span>
+                <span>Standard Delivery</span>
+                <span className="font-semibold text-emerald-deep">₹{shippingFee}</span>
               </div>
               <div className="flex justify-between text-base font-black text-emerald-deep pt-2 border-t border-emerald-deep/10">
                 <span>Total Amount</span>

@@ -13,8 +13,8 @@ export const BRAND = {
   instagramHandle: "@evokahomecare",
   email: "evokacleanings@gmail.com",
   emailHref: "mailto:evokacleanings@gmail.com",
-  freeShippingThreshold: 0,
-  flatShippingFee: 0,
+  freeShippingThreshold: 999999,
+  flatShippingFee: 40,
   enableOnlinePay: process.env.NEXT_PUBLIC_ENABLE_ONLINE_PAY === "true",
   upi: {
     id: process.env.NEXT_PUBLIC_UPI_ID || "m.farhan.741@fam",
@@ -109,8 +109,5 @@ export function normalizeCategorySlug(slug: string): string {
   return LEGACY_CATEGORY_MAP[slug] || slug;
 }
 
-export const COUPONS: Record<string, { discountPercent: number; minOrder: number; label: string }> = {
-  EVOKA10: { discountPercent: 10, minOrder: 399, label: "10% off on orders above ₹399" },
-  REFILL15: { discountPercent: 15, minOrder: 899, label: "15% off on orders above ₹899" },
-  KERALA5: { discountPercent: 5, minOrder: 0, label: "5% Welcome Discount" },
-};
+// Built-in coupons deleted. All promotional coupons are dynamically managed in the Admin Dashboard.
+export const COUPONS: Record<string, { discountPercent: number; minOrder: number; label: string }> = {};

@@ -7,6 +7,7 @@ import {
   getEffectiveCoupons,
   getOrderById,
   getOrders,
+  getStoreSettings,
   updateOrderByAdmin,
 } from "@/lib/store-db";
 import { verifyAdminSession } from "@/lib/admin-auth";
@@ -131,6 +132,9 @@ export async function POST(req: NextRequest) {
 
     const code = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : "";
     const activeCoupons = await getEffectiveCoupons();
+    const storeSettings = await getStoreSettings();
+    const standardDelivery = storeSettings?.deliveryCharge ?? 40;
+    const shippingFee = isPickup ? 0 : standardDelivery;
 
     const result = await createVerifiedOrder(({ items, subtotal }) => {
       let discount = 0;
@@ -138,7 +142,6 @@ export async function POST(req: NextRequest) {
         discount = Math.round((subtotal * activeCoupons[code].discountPercent) / 100);
       }
       const afterDiscount = Math.max(0, subtotal - discount);
-      const shippingFee = 0; // Free Delivery across all orders
       const total = afterDiscount + shippingFee;
 
       const order: Order = {

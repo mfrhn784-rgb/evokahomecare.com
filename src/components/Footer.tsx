@@ -128,24 +128,21 @@ export function Footer() {
           © {new Date().getFullYear()} EVOKA Home &amp; Personal Care — Pallichal, Trivandrum, Kerala. All rights reserved.
         </div>
 
-        {/* Unique Architect Signature Credit for Muhammed Farhan */}
+        {/* Architect Signature Credit: farspective.in */}
         <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/[0.06] border border-white/15 backdrop-blur-sm shadow-inner text-white/80 hover:border-[#E5A91A]/60 transition-all group">
           <span className="text-[11px] font-medium tracking-wide text-white/70">
-            Crafted &amp; Engineered by{" "}
-            <span className="font-extrabold text-white tracking-wider group-hover:text-[#E5A91A] transition-colors">
-              MUHAMMED FARHAN
-            </span>
+            Engineered &amp; Designed by
           </span>
-          <span className="w-1 h-1 rounded-full bg-[#E5A91A]" />
           <a
-            href="https://instagram.com/mhmmed.farhan"
+            href="https://farspective.in"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white/90 hover:text-[#E5A91A] transition-colors"
-            title="Muhammed Farhan (@mhmmed.farhan) on Instagram"
+            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white group-hover:text-[#E5A91A] transition-colors"
+            title="farspective.in"
           >
-            <Instagram className="w-3.5 h-3.5 text-[#E5A91A] shrink-0" />
-            <span className="underline decoration-white/30 underline-offset-2">mhmmed.farhan</span>
+            <span className="font-extrabold tracking-wider underline decoration-white/30 underline-offset-2">
+              farspective.in
+            </span>
           </a>
         </div>
       </div>

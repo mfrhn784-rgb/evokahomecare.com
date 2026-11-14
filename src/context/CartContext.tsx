@@ -31,9 +31,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [couponCode, setCouponCode] = useState<string>("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [deliveryCharge, setDeliveryCharge] = useState<number>(40);
   const [availableCoupons, setAvailableCoupons] = useState<
     Record<string, { discountPercent: number; minOrder: number; label: string }>
-  >(COUPONS);
+  >({});
 
   useEffect(() => {
     fetch("/api/coupons")
@@ -41,6 +42,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       .then((data) => {
         if (data && data.effective) {
           setAvailableCoupons(data.effective);
+        }
+      })
+      .catch(() => {});
+
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.settings && typeof data.settings.deliveryCharge === "number") {
+          setDeliveryCharge(data.settings.deliveryCharge);
         }
       })
       .catch(() => {});
@@ -117,7 +127,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       : 0;
 
   const afterDiscount = Math.max(0, subtotal - discount);
-  const shippingFee = 0; // Free delivery on all EVOKA orders
+  const shippingFee = deliveryCharge;
   const total = afterDiscount + shippingFee;
 
   const applyCoupon = (raw: string) => {

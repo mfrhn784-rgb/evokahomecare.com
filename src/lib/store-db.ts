@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { CustomerAddress, CustomerUser, Order, OrderInvoice, PaymentStatus, PendingOtp, Product, PromoCoupon } from "./types";
+import { CustomerAddress, CustomerUser, Order, OrderInvoice, PaymentStatus, PendingOtp, Product, PromoCoupon, StoreSettings } from "./types";
 import { SEED_PRODUCTS } from "./seed-products";
 import { BRAND, COUPONS } from "./brand";
 import { getEvokaBlobStore, isBlobsRuntime } from "./netlify-blobs-helper";
@@ -16,6 +16,7 @@ interface StoreData {
   otps?: PendingOtp[];
   invoiceSeq?: number;
   coupons?: PromoCoupon[];
+  settings?: StoreSettings;
 }
 
 function readLocalSeed(): StoreData {
@@ -33,6 +34,7 @@ function readLocalSeed(): StoreData {
         otps: Array.isArray(parsed.otps) ? parsed.otps : [],
         invoiceSeq: typeof parsed.invoiceSeq === "number" ? parsed.invoiceSeq : 0,
         coupons: Array.isArray(parsed.coupons) ? parsed.coupons : [],
+        settings: parsed.settings && typeof parsed.settings.deliveryCharge === "number" ? parsed.settings : { deliveryCharge: 40 },
       };
     }
   } catch {
@@ -45,6 +47,7 @@ function readLocalSeed(): StoreData {
     otps: [],
     invoiceSeq: 0,
     coupons: [],
+    settings: { deliveryCharge: 40 },
   };
 }
 
@@ -740,20 +743,39 @@ export async function getEffectiveCoupons(): Promise<
   Record<string, { discountPercent: number; minOrder: number; label: string }>
 > {
   const store = await readStore();
-  // Start with built-in brand coupons
-  const effective: Record<string, { discountPercent: number; minOrder: number; label: string }> = {
-    ...COUPONS,
-  };
+  // Only active custom promo coupons created in the Admin Dashboard
+  const effective: Record<string, { discountPercent: number; minOrder: number; label: string }> = {};
 
-  // Merge active custom store coupons
   for (const c of store.coupons || []) {
-    if (c.active) {
+    if (c.active !== false) {
       effective[c.code.toUpperCase()] = {
         discountPercent: c.discountPercent,
-        minOrder: c.minOrder,
-        label: c.description || `${c.discountPercent}% OFF (Min ₹${c.minOrder})`,
+        minOrder: c.minOrder || 0,
+        label: c.description || `${c.discountPercent}% OFF${c.minOrder ? ` (Min ₹${c.minOrder})` : ""}`,
       };
     }
   }
   return effective;
+}
+
+export async function getStoreSettings(): Promise<StoreSettings> {
+  const store = await readStore();
+  if (store.settings && typeof store.settings.deliveryCharge === "number") {
+    return store.settings;
+  }
+  return { deliveryCharge: 40 };
+}
+
+export async function updateStoreSettings(settings: Partial<StoreSettings>): Promise<StoreSettings> {
+  const store = await readStore();
+  const current = store.settings || { deliveryCharge: 40 };
+  store.settings = {
+    deliveryCharge:
+      typeof settings.deliveryCharge === "number"
+        ? Math.max(0, Math.round(settings.deliveryCharge))
+        : current.deliveryCharge,
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFullStore(store);
+  return store.settings;
 }

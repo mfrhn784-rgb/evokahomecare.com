@@ -90,6 +90,11 @@ export interface PromoCoupon {
   createdAt?: string;
 }
 
+export interface StoreSettings {
+  deliveryCharge: number;
+  updatedAt?: string;
+}
+
 export type OrderStatus =
   | "PENDING_CONFIRMATION"
   | "Pending"

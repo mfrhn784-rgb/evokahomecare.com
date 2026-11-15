@@ -103,6 +103,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
+  const [copiedOrderId, setCopiedOrderId] = useState(false);
   const [profileHydrated, setProfileHydrated] = useState(false);
   const [loadedFromSaved, setLoadedFromSaved] = useState(false);
 
@@ -336,9 +337,12 @@ export default function CheckoutPage() {
 
   if (confirmedOrder) {
     const cleanPhone = confirmedOrder.phone.replace(/\D/g, "").slice(-10);
+    const trackingUrl = `https://evokahomecare.com/orders?id=${encodeURIComponent(confirmedOrder.id)}&phone=${cleanPhone}`;
     const waHref = `${BRAND.whatsappUrl}?text=${encodeURIComponent(
       buildWhatsAppOrderMessage(confirmedOrder)
     )}`;
+    const customerShareText = `*My EVOKA Order Confirmation* 🌿\nOrder ID: *${confirmedOrder.id}*\nTotal: ₹${confirmedOrder.total}\nTrack status & invoice: ${trackingUrl}`;
+
     return (
       <div className="bg-[#F9FAF8] min-h-screen py-14">
         <div className="max-w-2xl mx-auto px-4">
@@ -354,9 +358,33 @@ export default function CheckoutPage() {
               <h1 className="text-2xl sm:text-3xl font-bold text-[#121614] mt-1">
                 Thank you, {confirmedOrder.customerName}!
               </h1>
-              <p className="text-sm text-[#5C6661] mt-1.5">
-                Order ID: <strong className="text-[#121614]">{confirmedOrder.id}</strong>
-              </p>
+              
+              <div className="inline-flex items-center gap-2 bg-[#F4F6F4] px-4 py-2 rounded-xl border border-[#E5E8E3] mt-3">
+                <span className="text-xs text-[#5C6661]">Order ID:</span>
+                <span className="font-mono font-bold text-sm text-[#184D3B] tracking-wider">{confirmedOrder.id}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(confirmedOrder.id);
+                    setCopiedOrderId(true);
+                    setTimeout(() => setCopiedOrderId(false), 2000);
+                  }}
+                  className="ml-1 px-2 py-1 rounded bg-white hover:bg-emerald-50 text-[#184D3B] text-[11px] inline-flex items-center gap-1 font-bold border border-[#E5E8E3] cursor-pointer transition-colors"
+                  title="Copy Order ID to clipboard"
+                >
+                  {copiedOrderId ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span className="text-emerald-700">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             <div className="bg-[#F9FAF8] rounded-xl p-5 text-left text-xs sm:text-sm space-y-2.5 border border-[#E5E8E3]">
@@ -387,7 +415,7 @@ export default function CheckoutPage() {
                 <span className="font-semibold text-[#121614] text-right">
                   {confirmedOrder.fulfillmentType === "pickup"
                     ? `Store Pickup — ${confirmedOrder.pickupOutlet}`
-                    : `Free Home Delivery (${confirmedOrder.address.pincode})`}
+                    : `Home Delivery (${confirmedOrder.address.pincode})`}
                 </span>
               </div>
               <div className="flex justify-between border-t border-[#E5E8E3] pt-2.5 font-bold text-base text-[#121614]">
@@ -396,38 +424,53 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            <div className="bg-[#E8F3EE]/60 border border-[#184D3B]/15 rounded-xl p-4 text-left space-y-3">
-              <div className="flex items-start gap-2.5">
-                <MessageCircle className="w-5 h-5 text-[#184D3B] shrink-0 mt-0.5" />
+            {/* WhatsApp Confirmation & Delivery Updates */}
+            <div className="bg-[#E8F3EE]/70 border border-[#184D3B]/20 rounded-2xl p-5 text-left space-y-3.5">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#25D366]/20 text-[#184D3B] flex items-center justify-center shrink-0 mt-0.5">
+                  <MessageCircle className="w-5 h-5 text-[#25D366]" />
+                </div>
                 <div className="text-xs text-[#121614] space-y-1">
-                  <p className="font-bold">Send Order Summary on WhatsApp</p>
+                  <p className="font-bold text-sm text-[#184D3B]">WhatsApp Order Confirmation &amp; Tracking</p>
                   <p className="text-[#5C6661]">
-                    WhatsApp does not send messages automatically. Please tap{" "}
-                    <strong>Send</strong> in the WhatsApp window to share your order summary with EVOKA.
+                    EVOKA will send your Order ID (<strong className="text-[#121614]">{confirmedOrder.id}</strong>) and 1-click tracking link directly to your WhatsApp (<strong className="text-[#121614]">{confirmedOrder.phone}</strong>). You can also notify EVOKA instantly below:
                   </p>
                 </div>
               </div>
-              <a
-                href={waHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-colors"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>Open WhatsApp &amp; Tap Send</span>
-              </a>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                <a
+                  href={waHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-colors shadow-xs"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Send to EVOKA (+91 9143374741)</span>
+                </a>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(customerShareText)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 px-4 rounded-xl bg-white border border-[#25D366]/40 text-[#184D3B] hover:bg-[#F4F6F4] text-xs font-bold inline-flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Save to My WhatsApp</span>
+                </a>
+              </div>
             </div>
 
             <div className="flex flex-wrap justify-center gap-3 pt-1">
               <Link
-                href={`/orders?id=${confirmedOrder.id}&phone=${cleanPhone}`}
-                className="px-6 py-3 rounded-xl bg-[#184D3B] text-white text-xs font-bold hover:bg-[#12382B] transition-all"
+                href={`/orders?id=${encodeURIComponent(confirmedOrder.id)}&phone=${cleanPhone}`}
+                className="px-6 py-3.5 rounded-xl bg-[#184D3B] text-white text-xs font-bold hover:bg-[#12382B] transition-all inline-flex items-center gap-2 shadow-sm"
               >
-                Manage / Track Order
+                <Truck className="w-4 h-4" />
+                <span>Track This Order (1-Click)</span>
               </Link>
               <Link
                 href="/shop"
-                className="px-6 py-3 rounded-xl bg-white border border-[#E5E8E3] text-[#121614] text-xs font-bold hover:bg-[#F4F6F4] transition-all"
+                className="px-6 py-3.5 rounded-xl bg-white border border-[#E5E8E3] text-[#121614] text-xs font-bold hover:bg-[#F4F6F4] transition-all"
               >
                 Continue Shopping
               </Link>

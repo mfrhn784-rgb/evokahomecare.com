@@ -216,7 +216,7 @@ export default function AdminPage() {
   const [offlineSearch, setOfflineSearch] = useState<string>("");
 
   const fetchData = async () => {
-    const [ordRes, prodRes] = await Promise.all([fetch("/api/orders"), fetch("/api/products")]);
+    const [ordRes, prodRes] = await Promise.all([fetch("/api/orders?admin=1"), fetch("/api/products")]);
     if (!ordRes.ok) return false;
     const ordData = await ordRes.json();
     const prodData = await prodRes.json();
@@ -1509,14 +1509,15 @@ export default function AdminPage() {
             {order.phone && order.phone !== "9999999999" && (
               <a
                 href={`https://wa.me/91${order.phone.replace(/\D/g, "").slice(-10)}?text=${encodeURIComponent(
-                  `Hello ${order.customerName}, this is EVOKA regarding your order ${order.id}.`
+                  `*EVOKA Home & Personal Care* 🌿\n\nDear ${order.customerName},\nYour EVOKA order *#${order.id}* is confirmed! 📦\n\n💰 Total: ₹${order.total}\n🚚 Status: ${order.status}\n\n🔗 *Track your order & download tax invoice in 1 click:*\nhttps://evokahomecare.com/orders?id=${encodeURIComponent(order.id)}&phone=${order.phone.replace(/\D/g, "").slice(-10)}\n\nThank you for choosing EVOKA!\nHelpline: +91 9143374741`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-1.5 rounded-lg border border-sand bg-oat hover:bg-sand text-charcoal inline-flex items-center"
-                title="WhatsApp Customer"
+                className="px-2.5 py-1 rounded-lg bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                title="Send Order ID and 1-Click Tracking Link to Customer via WhatsApp"
               >
-                <MessageSquare className="w-3.5 h-3.5 text-[#184D3B]" />
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">WhatsApp ID</span>
               </a>
             )}
 

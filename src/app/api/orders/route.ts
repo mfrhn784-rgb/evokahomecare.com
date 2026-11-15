@@ -20,9 +20,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const orderId = searchParams.get("id")?.trim();
   const phone = searchParams.get("phone")?.replace(/\D/g, "");
+  const isAdminParam = searchParams.get("admin") === "1" || searchParams.get("all") === "1";
 
-  // Admin access (verified session)
-  if (verifyAdminSession(req)) {
+  // Dedicated Admin retrieval (MUST have verified session AND explicit admin param, AND cannot have a customer phone param)
+  if (verifyAdminSession(req) && isAdminParam && !phone) {
     if (orderId) {
       const order = await getOrderById(orderId);
       return order
@@ -39,40 +40,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ orders: allOrders });
   }
 
-  // --- Customer Phone Verification (No Order ID Required) ---
+  // --- Strict Customer Privacy Verification ---
+  // A customer MUST provide BOTH:
+  // 1. Exact unguessable Order ID
+  // 2. The registered 10-digit mobile number matching that specific order
+  const cleanId = orderId ? orderId.trim() : "";
   const cleanPhone = phone ? phone.replace(/\D/g, "").slice(-10) : "";
-  if (!cleanPhone || cleanPhone.length < 10) {
+
+  const NO_STORE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, private, max-age=0",
+    Pragma: "no-cache",
+  };
+
+  const GENERIC_ERROR = "No matching order found for the provided Order ID and mobile number.";
+
+  if (!cleanId || !cleanPhone || cleanPhone.length < 10) {
     return NextResponse.json(
-      { error: "Please enter your registered 10-digit mobile number to track your orders." },
-      { status: 400 }
+      { error: "Both Order ID and your registered 10-digit mobile number are required to view order status." },
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
-  const allOrders = await getOrders();
-  // Filter online orders matching this customer's 10-digit phone (offline sales excluded)
-  let matched = allOrders.filter(
-    (o) =>
-      o.channel !== "offline" &&
-      o.phone.replace(/\D/g, "").slice(-10) === cleanPhone
-  );
+  const order = await getOrderById(cleanId);
 
-  matched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  if (orderId) {
-    const specific = matched.find((o) => o.id.toLowerCase() === orderId.toLowerCase());
-    if (specific) {
-      return NextResponse.json({ order: specific, orders: matched });
-    }
-  }
-
-  if (matched.length === 0) {
+  // Exclude offline counter sales from online customer portal
+  if (!order || order.channel === "offline") {
     return NextResponse.json(
-      { error: "No online orders found for this mobile number.", orders: [] },
-      { status: 404 }
+      { error: GENERIC_ERROR },
+      { status: 404, headers: NO_STORE_HEADERS }
     );
   }
 
-  return NextResponse.json({ orders: matched, order: matched[0] });
+  const cleanOrderPhone = order.phone.replace(/\D/g, "").slice(-10);
+  if (cleanOrderPhone !== cleanPhone) {
+    // Return identical generic 404 to prevent enumeration
+    return NextResponse.json(
+      { error: GENERIC_ERROR },
+      { status: 404, headers: NO_STORE_HEADERS }
+    );
+  }
+
+  // Return ONLY this single verified order
+  return NextResponse.json({ order }, { headers: NO_STORE_HEADERS });
 }
 
 export async function POST(req: NextRequest) {

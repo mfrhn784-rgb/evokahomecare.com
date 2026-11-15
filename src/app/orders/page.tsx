@@ -27,6 +27,7 @@ function OrdersContent() {
   const initialId = searchParams.get("id") || "";
   const initialPhone = searchParams.get("phone") || "";
 
+  const [orderIdInput, setOrderIdInput] = useState(initialId);
   const [phoneInput, setPhoneInput] = useState(initialPhone);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,11 +42,16 @@ function OrdersContent() {
   const [editPincode, setEditPincode] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
-  const fetchOrders = async (phoneVal: string, idVal?: string) => {
-    const cleanPhone = phoneVal.replace(/\D/g, "");
+  const fetchOrders = async (idVal: string, phoneVal: string) => {
+    const cleanId = idVal.trim();
+    const cleanPhone = phoneVal.replace(/\D/g, "").slice(-10);
 
+    if (!cleanId) {
+      setError("Please enter your Order ID.");
+      return;
+    }
     if (!cleanPhone || cleanPhone.length < 10) {
-      setError("Please enter your 10-digit mobile number used during checkout.");
+      setError("Please enter your registered 10-digit mobile number.");
       return;
     }
 
@@ -53,19 +59,22 @@ function OrdersContent() {
     setError("");
     setActionMsg("");
     setSearched(true);
+    setOrders([]); // Immediately isolate and clear previous order state
+
     try {
       const qs = new URLSearchParams();
+      qs.set("id", cleanId);
       qs.set("phone", cleanPhone);
-      if (idVal && idVal.trim()) {
-        qs.set("id", idVal.trim());
-      }
-      const res = await fetch(`/api/orders?${qs.toString()}`);
+      const res = await fetch(`/api/orders/track?${qs.toString()}`, {
+        headers: {
+          "Cache-Control": "no-cache, no-store, max-age=0",
+          Pragma: "no-cache",
+        },
+      });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "No orders found for this mobile number.");
+        setError(data.error || "No matching order found for the provided Order ID and mobile number.");
         setOrders([]);
-      } else if (Array.isArray(data.orders)) {
-        setOrders(data.orders);
       } else if (data.order) {
         setOrders([data.order]);
       } else {
@@ -83,9 +92,9 @@ function OrdersContent() {
     // Purge any legacy shared device storage on visit
     purgeDeviceOrderHistory();
 
-    // Auto-fetch if phone is supplied in URL query params
-    if (initialPhone && initialPhone.replace(/\D/g, "").length >= 10) {
-      fetchOrders(initialPhone, initialId);
+    // Auto-fetch ONLY if BOTH Order ID and registered 10-digit phone are supplied in URL query params
+    if (initialId && initialPhone && initialPhone.replace(/\D/g, "").length >= 10) {
+      fetchOrders(initialId, initialPhone);
     }
   }, [initialId, initialPhone]);
 
@@ -162,44 +171,76 @@ function OrdersContent() {
             <PackageCheck className="w-6 h-6" />
           </div>
           <h1 className="font-editorial text-3xl sm:text-4xl font-bold text-emerald-deep">
-            Track &amp; Manage Your Orders
+            Track &amp; Manage Your Order
           </h1>
-          <p className="text-xs sm:text-sm text-slate-body font-medium max-w-md mx-auto">
-            Enter your registered 10-digit mobile number to view all your order statuses, download tax invoices, or update delivery details.
+          <p className="text-xs sm:text-sm text-slate-body font-medium max-w-lg mx-auto">
+            To protect your privacy, please enter both your unique Order ID and the 10-digit registered mobile number used at checkout.
           </p>
         </div>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            fetchOrders(phoneInput);
+            fetchOrders(orderIdInput, phoneInput);
           }}
-          className="glass-panel rounded-3xl border border-emerald-deep/10 p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-3 print:hidden shadow-xs max-w-xl mx-auto"
+          className="glass-panel rounded-3xl border border-emerald-deep/10 p-5 sm:p-6 flex flex-col md:flex-row items-center gap-3 print:hidden shadow-xs max-w-2xl mx-auto"
         >
-          <div className="w-full flex-1">
+          <div className="w-full md:w-1/2">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-body mb-1">
-              Registered Mobile / WhatsApp Number *
+              Order ID *
+            </label>
+            <input
+              required
+              type="text"
+              value={orderIdInput}
+              onChange={(e) => setOrderIdInput(e.target.value)}
+              placeholder="e.g. EVK-123456-ABC"
+              className="w-full px-4 py-3 rounded-2xl bg-white border border-emerald-deep/15 text-sm focus:outline-none focus:border-emerald-vibrant font-mono font-semibold uppercase"
+            />
+          </div>
+          <div className="w-full md:w-1/2">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-body mb-1">
+              Registered Mobile Number *
             </label>
             <input
               required
               type="tel"
               value={phoneInput}
               onChange={(e) => setPhoneInput(e.target.value)}
-              placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
+              placeholder="10-digit mobile number"
               className="w-full px-4 py-3 rounded-2xl bg-white border border-emerald-deep/15 text-sm focus:outline-none focus:border-emerald-vibrant font-mono font-semibold"
             />
           </div>
-          <div className="w-full sm:w-auto sm:self-end">
+          <div className="w-full md:w-auto md:self-end">
             <button
               type="submit"
               disabled={loading}
-              className="w-full sm:w-auto py-3.5 px-6 rounded-full bg-emerald-deep text-pearl text-sm font-bold hover:bg-emerald-vibrant transition-all inline-flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 whitespace-nowrap"
+              className="w-full md:w-auto py-3.5 px-6 rounded-full bg-emerald-deep text-pearl text-sm font-bold hover:bg-emerald-vibrant transition-all inline-flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 whitespace-nowrap"
             >
               <Search className="w-4 h-4" />
-              <span>{loading ? "Searching..." : "Track My Orders"}</span>
+              <span>{loading ? "Verifying..." : "Track Order"}</span>
             </button>
           </div>
         </form>
+
+        <div className="text-center text-xs text-slate-body/80 -mt-4 print:hidden space-y-1">
+          <p>
+            💡 <span className="font-semibold text-emerald-deep">Where is your Order ID?</span> Sent to your WhatsApp from EVOKA (+91 9143374741) or shown on your order receipt.
+          </p>
+          <p>
+            Lost your Order ID?{" "}
+            <a
+              href={`https://wa.me/919143374741?text=${encodeURIComponent(
+                "Hello EVOKA, I need help retrieving my Order ID. My registered phone number is: "
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-vibrant font-bold underline hover:text-emerald-deep"
+            >
+              Ask EVOKA on WhatsApp
+            </a>
+          </p>
+        </div>
 
         {error && (
           <div className="p-4 rounded-2xl bg-red-50 text-red-600 text-xs sm:text-sm font-bold border border-red-200">
@@ -211,15 +252,15 @@ function OrdersContent() {
             {actionMsg}
           </div>
         )}
-        {loading && <p className="text-center text-xs text-slate-body font-semibold">Loading orders...</p>}
+        {loading && <p className="text-center text-xs text-slate-body font-semibold">Verifying order credentials...</p>}
 
         {!loading && searched && !error && orders.length === 0 && (
           <div className="glass-panel rounded-3xl border border-emerald-deep/10 p-10 text-center">
             <p className="font-editorial text-xl font-bold text-emerald-deep">
-              No orders found for this mobile number
+              No matching order found
             </p>
             <p className="text-xs text-slate-body mt-1">
-              Need assistance? WhatsApp or call EVOKA at {BRAND.phone} or email {BRAND.email}.
+              Please check your Order ID and registered mobile number. Need assistance? WhatsApp EVOKA at {BRAND.phone} or email {BRAND.email}.
             </p>
           </div>
         )}

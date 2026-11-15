@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import {
   clearAllOrders,
+  createOfflineOrder,
   createVerifiedOrder,
   customerModifyOrder,
   deleteOrderById,
@@ -19,6 +21,7 @@ export async function GET(req: NextRequest) {
   const orderId = searchParams.get("id")?.trim();
   const phone = searchParams.get("phone")?.replace(/\D/g, "");
 
+  // Admin access (verified session)
   if (verifyAdminSession(req)) {
     if (orderId) {
       const order = await getOrderById(orderId);
@@ -26,54 +29,77 @@ export async function GET(req: NextRequest) {
         ? NextResponse.json({ order })
         : NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
-    return NextResponse.json({ orders: await getOrders() });
-  }
-
-  // Customer lookup: requires phone verification when fetching by ID, or matches last 10 digits
-  if (orderId && phone && phone.length >= 10) {
-    const order = await getOrderById(orderId);
-    if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-    if (order.phone.replace(/\D/g, "").slice(-10) !== phone.slice(-10)) {
-      return NextResponse.json(
-        { error: "Phone number does not match this Order ID." },
-        { status: 403 }
-      );
+    const channel = searchParams.get("channel");
+    let allOrders = await getOrders();
+    if (channel === "online") {
+      allOrders = allOrders.filter((o) => o.channel !== "offline");
+    } else if (channel === "offline") {
+      allOrders = allOrders.filter((o) => o.channel === "offline");
     }
-    return NextResponse.json({ order });
+    return NextResponse.json({ orders: allOrders });
   }
 
-  if (phone && phone.length >= 10) {
-    const orders = (await getOrders()).filter(
-      (o) => o.phone.replace(/\D/g, "").slice(-10) === phone.slice(-10)
+  // --- Strict Customer Privacy Verification ---
+  // Non-admin customers MUST provide BOTH Order ID AND registered 10-digit mobile number!
+  if (!orderId || !phone || phone.length < 10) {
+    return NextResponse.json(
+      { error: "Both Order ID and your registered 10-digit mobile number are required to view order status." },
+      { status: 400 }
     );
-    return NextResponse.json({ orders });
   }
 
-  if (orderId) {
-    const order = await getOrderById(orderId);
-    if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-    // Mask sensitive street details unless phone is verified
-    return NextResponse.json({
-      order: {
-        ...order,
-        address: {
-          ...order.address,
-          line1: "Verified mobile number required to view/edit full street address",
-        },
-      },
-      requiresPhoneVerification: true,
-    });
+  const order = await getOrderById(orderId);
+
+  // Exclude offline counter sales from online customer portal
+  if (!order || order.channel === "offline") {
+    return NextResponse.json(
+      { error: "No matching order found for this Order ID and mobile number." },
+      { status: 404 }
+    );
   }
 
-  return NextResponse.json(
-    { error: "Enter your Order ID and mobile number to view your orders." },
-    { status: 400 }
-  );
+  const cleanOrderPhone = order.phone.replace(/\D/g, "").slice(-10);
+  const cleanInputPhone = phone.slice(-10);
+
+  if (cleanOrderPhone !== cleanInputPhone) {
+    // Generic response prevents phone enumeration & unauthorized order probing
+    return NextResponse.json(
+      { error: "No matching order found for this Order ID and mobile number." },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json({ order });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // Check if this is an offline POS sale from Admin
+    if (body.channel === "offline") {
+      if (!verifyAdminSession(req)) {
+        return NextResponse.json(
+          { error: "Unauthorized. Admin session required for offline sales billing." },
+          { status: 401 }
+        );
+      }
+      const offlineResult = await createOfflineOrder({
+        customerName: body.customerName,
+        phone: body.phone,
+        items: body.items,
+        discount: body.discount,
+        deliveryFee: body.deliveryFee,
+        paymentMethod: body.paymentMethod || "cash",
+        notes: body.notes,
+        cashier: body.cashier || "Admin Console",
+      });
+      if (!offlineResult.ok) {
+        return NextResponse.json({ error: offlineResult.error }, { status: 400 });
+      }
+      return NextResponse.json({ order: offlineResult.order }, { status: 201 });
+    }
+
     const customerName = String(body.customerName || "").trim();
     const phoneRaw = String(body.phone || "").trim();
     const digits = phoneRaw.replace(/\D/g, "");
@@ -144,8 +170,10 @@ export async function POST(req: NextRequest) {
       const afterDiscount = Math.max(0, subtotal - discount);
       const total = afterDiscount + shippingFee;
 
+      const randToken = crypto.randomBytes(3).toString("hex").toUpperCase();
       const order: Order = {
-        id: `EVK-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+        id: `EVK-${Date.now().toString().slice(-6)}-${randToken}`,
+        channel: "online",
         clientRequestId,
         createdAt: new Date().toISOString(),
         customerName,

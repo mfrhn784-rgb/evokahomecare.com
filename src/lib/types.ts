@@ -104,7 +104,7 @@ export type OrderStatus =
   | "Delivered"
   | "Cancelled";
 
-export type PaymentMethod = "upi" | "cod" | "whatsapp" | "razorpay";
+export type PaymentMethod = "upi" | "cod" | "whatsapp" | "razorpay" | "cash" | "card";
 export type PaymentStatus =
   | "PAYMENT_UNDER_REVIEW"
   | "PAID"
@@ -131,6 +131,9 @@ export interface OrderInvoice {
 
 export interface Order {
   id: string;
+  channel?: "online" | "offline";
+  offlineBillNumber?: string;
+  offlineCashier?: string;
   userId?: string;
   clientRequestId?: string;
   createdAt: string;

@@ -17,12 +17,7 @@ import {
 import { Order } from "@/lib/types";
 import { BRAND } from "@/lib/brand";
 import { useCart } from "@/context/CartContext";
-import {
-  loadSavedOrders,
-  loadSavedProfile,
-  SavedOrderRef,
-  syncSavedOrdersStatus,
-} from "@/lib/customer-storage";
+import { purgeDeviceOrderHistory } from "@/lib/customer-storage";
 
 const TIMELINE = ["Pending", "Confirmed", "Packed", "Shipped", "Delivered"] as const;
 
@@ -35,7 +30,6 @@ function OrdersContent() {
   const [orderIdInput, setOrderIdInput] = useState(initialId);
   const [phoneInput, setPhoneInput] = useState(initialPhone);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [savedOrders, setSavedOrders] = useState<SavedOrderRef[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [actionMsg, setActionMsg] = useState("");
@@ -49,38 +43,38 @@ function OrdersContent() {
   const [editNotes, setEditNotes] = useState("");
 
   const fetchOrders = async (idVal: string, phoneVal: string) => {
+    const cleanId = idVal.trim();
     const cleanPhone = phoneVal.replace(/\D/g, "");
+
+    if (!cleanId) {
+      setError("Please enter your Order ID.");
+      return;
+    }
     if (!cleanPhone || cleanPhone.length < 10) {
       setError("Please enter the 10-digit mobile number used during checkout.");
       return;
     }
+
     setLoading(true);
     setError("");
     setActionMsg("");
     setSearched(true);
     try {
       const qs = new URLSearchParams();
-      if (idVal.trim()) qs.set("id", idVal.trim());
+      qs.set("id", cleanId);
       qs.set("phone", cleanPhone);
       const res = await fetch(`/api/orders?${qs.toString()}`);
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Could not find orders.");
+        setError(data.error || "No matching order found for this Order ID and mobile number.");
         setOrders([]);
       } else if (data.order) {
         setOrders([data.order]);
-        syncSavedOrdersStatus([data.order]);
-        setSavedOrders(loadSavedOrders());
       } else {
-        const list = (data.orders || []) as Order[];
-        setOrders(list);
-        if (list.length > 0) {
-          syncSavedOrdersStatus(list);
-          setSavedOrders(loadSavedOrders());
-        }
+        setOrders([]);
       }
     } catch {
-      setError("Network error while checking orders.");
+      setError("Network error while checking your order. Please try again.");
       setOrders([]);
     } finally {
       setLoading(false);
@@ -88,17 +82,12 @@ function OrdersContent() {
   };
 
   useEffect(() => {
-    const localOrders = loadSavedOrders();
-    setSavedOrders(localOrders);
-    if (initialPhone) {
+    // Purge any legacy shared device storage on visit
+    purgeDeviceOrderHistory();
+
+    // Auto-fetch ONLY if both ID and phone are supplied in URL query params
+    if (initialId && initialPhone && initialPhone.replace(/\D/g, "").length >= 10) {
       fetchOrders(initialId, initialPhone);
-      return;
-    }
-    const savedProfile = loadSavedProfile();
-    const autoPhone = savedProfile?.phone || localOrders[0]?.phone || "";
-    if (autoPhone && autoPhone.replace(/\D/g, "").length >= 10) {
-      setPhoneInput(autoPhone);
-      fetchOrders("", autoPhone);
     }
   }, [initialId, initialPhone]);
 
@@ -175,64 +164,13 @@ function OrdersContent() {
             <PackageCheck className="w-6 h-6" />
           </div>
           <h1 className="font-editorial text-3xl sm:text-4xl font-bold text-emerald-deep">
-            Track &amp; Manage Your Orders
+            Track &amp; Manage Your Order
           </h1>
           <p className="text-xs sm:text-sm text-slate-body font-medium">
-            Your recent orders on this device load automatically. Verify any mobile number to view
-            invoices, reorder, or manage delivery.
+            Enter your Order ID and registered mobile number to securely view fulfillment status,
+            download invoices, or update delivery details.
           </p>
         </div>
-
-        {/* Saved Recent Orders Quick Strip */}
-        {savedOrders.length > 0 && (
-          <div className="bg-white rounded-2xl border border-[#E5E8E3] p-4 space-y-2.5 print:hidden">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-[#121614] inline-flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#184D3B]" />
-                Recent Orders on This Device
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const p = savedOrders[0]?.phone || phoneInput;
-                  if (p) {
-                    setOrderIdInput("");
-                    setPhoneInput(p);
-                    fetchOrders("", p);
-                  }
-                }}
-                className="text-[11px] font-bold text-[#184D3B] hover:underline cursor-pointer"
-              >
-                Show All ({savedOrders.length})
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {savedOrders.slice(0, 6).map((ref) => (
-                <button
-                  key={ref.id}
-                  type="button"
-                  onClick={() => {
-                    setOrderIdInput(ref.id);
-                    setPhoneInput(ref.phone);
-                    fetchOrders(ref.id, ref.phone);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl border text-left text-xs transition-all cursor-pointer ${
-                    orders.some((o) => o.id === ref.id)
-                      ? "bg-[#EBF5EE] border-[#184D3B] text-[#184D3B]"
-                      : "bg-[#F9FAF8] border-[#E5E8E3] text-[#121614] hover:border-[#184D3B]"
-                  }`}
-                >
-                  <span className="font-mono font-bold">{ref.id}</span>
-                  <span className="mx-1.5 text-[#5C6661]">•</span>
-                  <span className="font-semibold">₹{ref.total}</span>
-                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-white border border-[#E5E8E3]">
-                    {ref.status}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         <form
           onSubmit={(e) => {
@@ -242,6 +180,19 @@ function OrdersContent() {
           className="glass-panel rounded-3xl border border-emerald-deep/10 p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-12 gap-3.5 print:hidden shadow-xs"
         >
           <div className="sm:col-span-5">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-body mb-1">
+              Order ID *
+            </label>
+            <input
+              required
+              type="text"
+              value={orderIdInput}
+              onChange={(e) => setOrderIdInput(e.target.value)}
+              placeholder="e.g. EVK-123456-ABC"
+              className="w-full px-4 py-2.5 rounded-2xl bg-white border border-emerald-deep/15 text-xs sm:text-sm focus:outline-none focus:border-emerald-vibrant font-mono"
+            />
+          </div>
+          <div className="sm:col-span-4">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-body mb-1">
               Mobile Number *
             </label>
@@ -254,25 +205,14 @@ function OrdersContent() {
               className="w-full px-4 py-2.5 rounded-2xl bg-white border border-emerald-deep/15 text-xs sm:text-sm focus:outline-none focus:border-emerald-vibrant"
             />
           </div>
-          <div className="sm:col-span-4">
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-body mb-1">
-              Order ID (optional)
-            </label>
-            <input
-              type="text"
-              value={orderIdInput}
-              onChange={(e) => setOrderIdInput(e.target.value)}
-              placeholder="EVK-123456"
-              className="w-full px-4 py-2.5 rounded-2xl bg-white border border-emerald-deep/15 text-xs sm:text-sm focus:outline-none focus:border-emerald-vibrant"
-            />
-          </div>
           <div className="sm:col-span-3 flex items-end">
             <button
               type="submit"
-              className="w-full py-3 px-5 rounded-full bg-emerald-deep text-pearl text-xs sm:text-sm font-bold hover:bg-emerald-vibrant transition-all inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+              disabled={loading}
+              className="w-full py-3 px-5 rounded-full bg-emerald-deep text-pearl text-xs sm:text-sm font-bold hover:bg-emerald-vibrant transition-all inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
             >
               <Search className="w-4 h-4" />
-              <span>Find Order</span>
+              <span>{loading ? "Searching..." : "Track Order"}</span>
             </button>
           </div>
         </form>

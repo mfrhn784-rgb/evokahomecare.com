@@ -20,9 +20,7 @@ import { BRAND } from "@/lib/brand";
 import { useCart } from "@/context/CartContext";
 import {
   EVOKA_STORAGE_EVENT,
-  loadSavedOrders,
   loadSavedProfile,
-  SavedOrderRef,
   SavedCustomerProfile,
 } from "@/lib/customer-storage";
 
@@ -40,27 +38,19 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [showOrdersDropdown, setShowOrdersDropdown] = useState(false);
-  const [savedOrders, setSavedOrders] = useState<SavedOrderRef[]>([]);
-  const [savedProfile, setSavedProfile] = useState<SavedCustomerProfile | null>(null);
 
   const searchBoxRef = useRef<HTMLDivElement>(null);
-  const ordersMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-
-  // Load auto-saved orders & customer profile from localStorage
-  const refreshStorage = () => {
-    setSavedOrders(loadSavedOrders());
-    setSavedProfile(loadSavedProfile());
-  };
+  const [savedProfile, setSavedProfile] = useState<SavedCustomerProfile | null>(null);
 
   useEffect(() => {
-    refreshStorage();
-    window.addEventListener(EVOKA_STORAGE_EVENT, refreshStorage);
-    window.addEventListener("storage", refreshStorage);
+    setSavedProfile(loadSavedProfile());
+    const handleStorage = () => setSavedProfile(loadSavedProfile());
+    window.addEventListener(EVOKA_STORAGE_EVENT, handleStorage);
+    window.addEventListener("storage", handleStorage);
     return () => {
-      window.removeEventListener(EVOKA_STORAGE_EVENT, refreshStorage);
-      window.removeEventListener("storage", refreshStorage);
+      window.removeEventListener(EVOKA_STORAGE_EVENT, handleStorage);
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
@@ -69,9 +59,6 @@ export function Navbar() {
       const target = event.target as Node;
       if (searchBoxRef.current && !searchBoxRef.current.contains(target)) {
         setShowSuggestions(false);
-      }
-      if (ordersMenuRef.current && !ordersMenuRef.current.contains(target)) {
-        setShowOrdersDropdown(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -95,8 +82,6 @@ export function Navbar() {
         s.label.toLowerCase().includes(searchTerm.trim().toLowerCase())
       )
     : SEARCH_SUGGESTIONS;
-
-  const latestOrder = savedOrders[0];
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-[#E5E8E3]">
@@ -130,17 +115,11 @@ export function Navbar() {
             </a>
             <span className="text-white/25">|</span>
             <Link
-              href={
-                latestOrder
-                  ? `/orders?id=${latestOrder.id}&phone=${latestOrder.phone}`
-                  : savedProfile?.phone
-                  ? `/orders?phone=${savedProfile.phone}`
-                  : "/orders"
-              }
+              href="/orders"
               className="inline-flex items-center gap-1.5 text-white/90 hover:text-white transition-colors"
             >
               <PackageCheck className="w-3.5 h-3.5 text-[#4ADE80]" />
-              <span>{savedOrders.length > 0 ? `My Orders (${savedOrders.length})` : "Track Order"}</span>
+              <span>Track Order</span>
             </Link>
           </div>
         </div>
@@ -247,131 +226,16 @@ export function Navbar() {
               )}
             </div>
 
-            {/* MY ORDERS Top Button & Quick-Access Drawer */}
-            <div ref={ordersMenuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setShowOrdersDropdown(!showOrdersDropdown)}
-                className={`relative px-3 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border ${
-                  savedOrders.length > 0
-                    ? "bg-[#EBF5EE] text-[#154734] border-[#154734]/20 hover:bg-[#154734] hover:text-white"
-                    : "bg-[#F6F7F4] text-[#141A16] border-[#E5E8E3] hover:border-[#154734]"
-                }`}
-                title="View & Track Your Orders"
-                aria-label="My Orders"
-              >
-                <PackageCheck className="w-4 h-4 text-[#154734]" />
-                <span className="hidden sm:inline">Orders</span>
-                {savedOrders.length > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-[#154734] text-white text-[10px] font-bold">
-                    {savedOrders.length}
-                  </span>
-                )}
-              </button>
-
-              {/* Orders Dropdown */}
-              {showOrdersDropdown && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-[#E5E8E3] bg-white shadow-xl p-4 z-50 animate-in fade-in slide-in-from-top-2">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#E5E8E3]">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-[#EBF5EE] text-[#154734] flex items-center justify-center">
-                        <PackageCheck className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h3 className="text-xs font-bold text-[#141A16]">My Recent Orders</h3>
-                        <p className="text-[10px] text-[#6B756D]">Auto-saved on this device</p>
-                      </div>
-                    </div>
-                    <Link
-                      href={
-                        latestOrder
-                          ? `/orders?id=${latestOrder.id}&phone=${latestOrder.phone}`
-                          : savedProfile?.phone
-                          ? `/orders?phone=${savedProfile.phone}`
-                          : "/orders"
-                      }
-                      onClick={() => setShowOrdersDropdown(false)}
-                      className="text-[11px] font-bold text-[#154734] hover:underline"
-                    >
-                      Track Page &rarr;
-                    </Link>
-                  </div>
-
-                  {savedOrders.length === 0 ? (
-                    <div className="py-6 text-center space-y-2">
-                      <Clock className="w-8 h-8 text-[#6B756D]/40 mx-auto" />
-                      <p className="text-xs text-[#6B756D]">No orders placed on this device yet.</p>
-                      <Link
-                        href="/orders"
-                        onClick={() => setShowOrdersDropdown(false)}
-                        className="inline-block text-xs font-bold text-[#154734] hover:underline"
-                      >
-                        Look up by Order ID &amp; Phone
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="py-2 divide-y divide-[#E5E8E3] max-h-72 overflow-y-auto">
-                      {savedOrders.slice(0, 5).map((o) => (
-                        <Link
-                          key={o.id}
-                          href={`/orders?id=${o.id}&phone=${o.phone}`}
-                          onClick={() => setShowOrdersDropdown(false)}
-                          className="py-2.5 px-2 rounded-xl hover:bg-[#F6F7F4] flex items-center justify-between gap-3 transition-colors group"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs font-bold text-[#141A16] group-hover:text-[#154734]">
-                                {o.id}
-                              </span>
-                              <span
-                                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                  o.status === "Delivered"
-                                    ? "bg-emerald-100 text-emerald-800"
-                                    : o.status === "Cancelled"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-amber-100 text-amber-800"
-                                }`}
-                              >
-                                {o.status}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-[#6B756D] truncate mt-0.5">
-                              {o.firstItemName}
-                              {o.itemCount > 1 ? ` + ${o.itemCount - 1} more` : ""}
-                            </p>
-                            <p className="text-[10px] text-[#6B756D]">
-                              {new Date(o.createdAt).toLocaleDateString("en-IN", {
-                                day: "2-digit",
-                                month: "short",
-                              })}{" "}
-                              • ₹{o.total}
-                            </p>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-[#6B756D] group-hover:text-[#154734] shrink-0" />
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="pt-3 border-t border-[#E5E8E3] flex items-center justify-between text-[11px]">
-                    <span className="text-[#6B756D]">
-                      {savedProfile?.customerName ? (
-                        <>Saved as <strong>{savedProfile.customerName}</strong></>
-                      ) : (
-                        "Details auto-fill at checkout"
-                      )}
-                    </span>
-                    <Link
-                      href="/orders"
-                      onClick={() => setShowOrdersDropdown(false)}
-                      className="font-bold text-[#154734] hover:underline"
-                    >
-                      View All
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Secure Track Order Link */}
+            <Link
+              href="/orders"
+              className="px-3 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors border bg-[#F6F7F4] text-[#141A16] border-[#E5E8E3] hover:border-[#154734] hover:text-[#154734]"
+              title="Track Your Order"
+              aria-label="Track Your Order"
+            >
+              <PackageCheck className="w-4 h-4 text-[#154734]" />
+              <span className="hidden sm:inline">Track Order</span>
+            </Link>
 
             {/* Shopping Cart Button */}
             <button
@@ -406,26 +270,6 @@ export function Navbar() {
             />
           </form>
 
-          {/* Mobile Orders Banner if any */}
-          {savedOrders.length > 0 && (
-            <Link
-              href={`/orders?id=${savedOrders[0].id}&phone=${savedOrders[0].phone}`}
-              onClick={() => setMobileOpen(false)}
-              className="block p-3 rounded-xl bg-[#EBF5EE] border border-[#154734]/20 text-[#154734]"
-            >
-              <div className="flex items-center justify-between text-xs font-bold">
-                <span className="flex items-center gap-1.5">
-                  <PackageCheck className="w-4 h-4 text-[#154734]" />
-                  <span>Latest Order: {savedOrders[0].id}</span>
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white font-bold">
-                  {savedOrders[0].status}
-                </span>
-              </div>
-              <p className="text-[11px] text-[#6B756D] mt-1">Tap to track live fulfillment &rarr;</p>
-            </Link>
-          )}
-
           <div className="grid grid-cols-2 gap-2 text-xs font-semibold">
             <Link
               href="/shop"
@@ -452,17 +296,13 @@ export function Navbar() {
               </Link>
             ))}
             <Link
-              href={
-                latestOrder
-                  ? `/orders?id=${latestOrder.id}&phone=${latestOrder.phone}`
-                  : "/orders"
-              }
+              href="/orders"
               onClick={() => setMobileOpen(false)}
               className="p-3 rounded-lg bg-[#154734] text-white col-span-2 flex items-center justify-between font-bold"
             >
               <span className="flex items-center gap-2">
                 <PackageCheck className="w-4 h-4 text-[#4ADE80]" />
-                <span>{savedOrders.length > 0 ? `My Orders (${savedOrders.length})` : "Track Order"}</span>
+                <span>Track Order</span>
               </span>
               <span className="text-[11px] text-white/80">&rarr;</span>
             </Link>

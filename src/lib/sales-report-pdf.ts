@@ -77,6 +77,11 @@ export async function generateSalesReportPdfBuffer(
     ["Pending", "PENDING_CONFIRMATION"].includes(o.status)
   );
 
+  const onlineOrders = activeOrders.filter((o) => o.channel !== "offline");
+  const offlineOrders = activeOrders.filter((o) => o.channel === "offline");
+  const onlineSales = onlineOrders.reduce((sum, o) => sum + o.total, 0);
+  const offlineSales = offlineOrders.reduce((sum, o) => sum + o.total, 0);
+
   const netSales = activeOrders.reduce((sum, o) => sum + o.total, 0);
   const grossSales = orders.reduce((sum, o) => sum + o.total, 0);
   const aov = activeOrders.length > 0 ? Math.round(netSales / activeOrders.length) : 0;
@@ -136,12 +141,12 @@ export async function generateSalesReportPdfBuffer(
   });
 
   const kpis = [
-    { label: "NET SALES", val: formatINR(netSales) },
-    { label: "ORDERS PLACED", val: String(totalOrders) },
-    { label: "CONFIRMED", val: `${confirmedOrders.length} orders` },
-    { label: "AVG ORDER VALUE", val: formatINR(aov) },
-    { label: "UPI REVENUE", val: `${formatINR(upiSales)} (${upiOrders.length})` },
-    { label: "COD REVENUE", val: `${formatINR(codSales)} (${codOrders.length})` },
+    { label: "TOTAL COMBINED SALES", val: formatINR(netSales) },
+    { label: "ONLINE SALES", val: `${formatINR(onlineSales)} (${onlineOrders.length} orders)` },
+    { label: "OFFLINE SALES", val: `${formatINR(offlineSales)} (${offlineOrders.length} bills)` },
+    { label: "TOTAL TRANSACTIONS", val: String(totalOrders) },
+    { label: "CONFIRMED / DELIVERED", val: `${confirmedOrders.length} completed` },
+    { label: "AVG TICKET VALUE", val: formatINR(aov) },
   ];
 
   const colW = CONTENT_WIDTH / 3;
@@ -236,12 +241,15 @@ export async function generateSalesReportPdfBuffer(
         color: COLOR_DARK,
       });
 
-      page.drawText(safeText(order.id.slice(-8)), {
+      const isOffline = order.channel === "offline";
+      const displayId = isOffline && order.offlineBillNumber ? order.offlineBillNumber : order.id.slice(-8);
+
+      page.drawText(safeText(displayId), {
         x: colX.id,
         y: textY,
-        size: 7.5,
+        size: 7,
         font: fontBold,
-        color: COLOR_MUTED,
+        color: isOffline ? COLOR_ACCENT : COLOR_MUTED,
       });
 
       page.drawText(safeText(`${order.customerName.slice(0, 18)} (${order.phone.slice(-4)})`), {
@@ -252,12 +260,13 @@ export async function generateSalesReportPdfBuffer(
         color: COLOR_DARK,
       });
 
-      page.drawText(safeText(order.paymentMethod.toUpperCase()), {
+      const paymentLabel = isOffline ? `OFFLINE (${order.paymentMethod.toUpperCase()})` : order.paymentMethod.toUpperCase();
+      page.drawText(safeText(paymentLabel.slice(0, 14)), {
         x: colX.method,
         y: textY,
-        size: 7.5,
+        size: 7,
         font: fontRegular,
-        color: COLOR_MUTED,
+        color: isOffline ? COLOR_ACCENT : COLOR_MUTED,
       });
 
       const isCancelled = order.status === "Cancelled";
@@ -276,10 +285,11 @@ export async function generateSalesReportPdfBuffer(
         color: statusColor,
       });
 
-      page.drawText(safeText(order.fulfillmentType === "pickup" ? "Pickup" : "Delivery"), {
+      const fulfillLabel = isOffline ? "Walk-in (POS)" : order.fulfillmentType === "pickup" ? "Pickup" : "Delivery";
+      page.drawText(safeText(fulfillLabel), {
         x: colX.fulfill,
         y: textY,
-        size: 7.5,
+        size: 7,
         font: fontRegular,
         color: COLOR_MUTED,
       });

@@ -80,13 +80,15 @@ async function readStore(): Promise<StoreData> {
   if (isBlobsRuntime()) {
     try {
       const store = getEvokaBlobStore(BLOB_STORE_NAME, true);
-      const [products, orders, invoiceSeq, users, otps] = await withTimeout(
+      const [products, orders, invoiceSeq, users, otps, coupons, settings] = await withTimeout(
         Promise.all([
           store.get("products", { type: "json" }) as Promise<Product[] | null>,
           store.get("orders", { type: "json" }) as Promise<Order[] | null>,
           store.get("invoiceSeq", { type: "json" }) as Promise<number | null>,
           store.get("users", { type: "json" }) as Promise<CustomerUser[] | null>,
           store.get("otps", { type: "json" }) as Promise<PendingOtp[] | null>,
+          store.get("coupons", { type: "json" }) as Promise<PromoCoupon[] | null>,
+          store.get("settings", { type: "json" }) as Promise<StoreSettings | null>,
         ]),
         4000
       );
@@ -98,6 +100,8 @@ async function readStore(): Promise<StoreData> {
         users: Array.isArray(users) ? users : seed.users || [],
         otps: Array.isArray(otps) ? otps : seed.otps || [],
         invoiceSeq: typeof invoiceSeq === "number" ? invoiceSeq : seed.invoiceSeq || 0,
+        coupons: Array.isArray(coupons) ? coupons : seed.coupons || [],
+        settings: settings && typeof settings.deliveryCharge === "number" ? settings : seed.settings || { deliveryCharge: 40 },
       };
     } catch {
       return readLocalSeed();
@@ -127,6 +131,8 @@ async function writeFullStore(data: StoreData): Promise<void> {
       store.setJSON("users", data.users || []),
       store.setJSON("otps", data.otps || []),
       store.setJSON("invoiceSeq", data.invoiceSeq || 0),
+      store.setJSON("coupons", data.coupons || []),
+      store.setJSON("settings", data.settings || { deliveryCharge: 40 }),
     ]);
     return;
   }
@@ -300,6 +306,131 @@ export async function createVerifiedOrder(
       variant.stock = Math.max(0, variant.stock - item.quantity);
     }
   }
+
+  store.orders.unshift(order);
+  await writeFullStore(store);
+  return { ok: true, order };
+}
+
+export async function createOfflineOrder(input: {
+  customerName?: string;
+  phone?: string;
+  items: Array<{ productId: string; variantId: string; quantity: number; price?: number }>;
+  discount?: number;
+  deliveryFee?: number;
+  paymentMethod: "cash" | "upi" | "card" | "cod";
+  notes?: string;
+  cashier?: string;
+}): Promise<{ ok: true; order: Order } | { ok: false; error: string }> {
+  const store = await readStore();
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, error: "Please add at least one product item to create a bill." };
+  }
+
+  const verifiedItems: Order["items"] = [];
+  let subtotal = 0;
+
+  for (const requested of input.items) {
+    const prod = store.products.find((p) => p.id === requested.productId);
+    if (!prod) {
+      return { ok: false, error: `Product not found in catalog.` };
+    }
+    const variant = prod.variants.find((v) => v.id === requested.variantId);
+    if (!variant) {
+      return { ok: false, error: `Variant not found for "${prod.name}".` };
+    }
+    const qty = Math.floor(Number(requested.quantity));
+    if (!Number.isFinite(qty) || qty < 1) {
+      return { ok: false, error: `Invalid quantity for "${prod.name}".` };
+    }
+    if (variant.stock < qty) {
+      return {
+        ok: false,
+        error: `Insufficient stock for "${prod.name} (${variant.label})". Available: ${variant.stock}, requested: ${qty}.`,
+      };
+    }
+
+    const unitPrice =
+      typeof requested.price === "number" && requested.price >= 0 ? requested.price : variant.price;
+
+    verifiedItems.push({
+      productId: prod.id,
+      variantId: variant.id,
+      name: prod.name,
+      variantLabel: variant.label,
+      price: unitPrice,
+      mrp: variant.mrp,
+      image: prod.image,
+      slug: prod.slug,
+      quantity: qty,
+    });
+    subtotal += unitPrice * qty;
+  }
+
+  // Deduct stock immediately for offline purchase
+  for (const item of verifiedItems) {
+    const prod = store.products.find((p) => p.id === item.productId);
+    const variant = prod?.variants.find((v) => v.id === item.variantId);
+    if (variant) {
+      variant.stock = Math.max(0, variant.stock - item.quantity);
+    }
+  }
+
+  const discount = Math.max(0, Number(input.discount) || 0);
+  const deliveryFee = Math.max(0, Number(input.deliveryFee) || 0);
+  const total = Math.max(0, subtotal - discount + deliveryFee);
+
+  const nextSeq = (store.invoiceSeq || 0) + 1;
+  store.invoiceSeq = nextSeq;
+  const currentYear = new Date().getFullYear();
+  const offlineBillNumber = `BILL-${currentYear}-${String(nextSeq).padStart(4, "0")}`;
+  const nowIso = new Date().toISOString();
+
+  const randSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  const orderId = `EVK-OFF-${Date.now().toString().slice(-6)}-${randSuffix}`;
+
+  const cleanPhone = input.phone ? input.phone.replace(/\D/g, "").slice(-10) : "";
+
+  const order: Order = {
+    id: orderId,
+    channel: "offline",
+    offlineBillNumber,
+    offlineCashier: input.cashier || "Admin Console",
+    createdAt: nowIso,
+    customerName: input.customerName?.trim() || "Walk-in Customer",
+    phone: cleanPhone || "9999999999",
+    email: "",
+    fulfillmentType: "pickup",
+    pickupOutlet: BRAND.outlets[0]?.name || "EVOKA Factory Outlet",
+    address: {
+      line1: "Counter Sale / Walk-in Store",
+      city: "Thiruvananthapuram",
+      state: "Kerala",
+      pincode: "695001",
+    },
+    items: verifiedItems,
+    subtotal,
+    discount,
+    shippingFee: deliveryFee,
+    total,
+    paymentMethod: input.paymentMethod || "cash",
+    paymentStatus: "PAID",
+    status: "Delivered",
+    notes: input.notes?.trim() || undefined,
+    invoice: {
+      invoiceNumber: offlineBillNumber,
+      generatedAt: nowIso,
+      subtotal,
+      discount,
+      shippingFee: deliveryFee,
+      taxRatePercent: 0,
+      taxAmount: 0,
+      total,
+      paymentMethod: (input.paymentMethod || "cash").toUpperCase(),
+      paymentStatus: "PAID",
+    },
+  };
 
   store.orders.unshift(order);
   await writeFullStore(store);

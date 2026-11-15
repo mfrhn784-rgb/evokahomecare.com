@@ -1,7 +1,6 @@
 import { Order } from "./types";
 
 const PROFILE_KEY = "evoka_customer_profile_v1";
-const ORDERS_KEY = "evoka_saved_orders_v1";
 export const EVOKA_STORAGE_EVENT = "evoka-customer-storage-updated";
 
 export interface SavedCustomerProfile {
@@ -35,6 +34,31 @@ export interface SavedOrderRef {
 function notifyUpdate() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(EVOKA_STORAGE_EVENT));
+  }
+}
+
+/**
+ * CRITICAL PRIVACY FIX:
+ * Purges all device-wide order history from browser localStorage to prevent
+ * exposing one customer's orders to subsequent visitors on the same device.
+ */
+export function purgeDeviceOrderHistory(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("evoka_saved_orders_v1");
+    localStorage.removeItem("evoka_saved_orders");
+    localStorage.removeItem("evoka_recent_orders");
+  } catch {
+    // ignore
+  }
+}
+
+// Auto-purge legacy shared order records on client load
+if (typeof window !== "undefined") {
+  try {
+    purgeDeviceOrderHistory();
+  } catch {
+    // ignore
   }
 }
 
@@ -81,88 +105,27 @@ export function clearSavedProfile(): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(PROFILE_KEY);
+    purgeDeviceOrderHistory();
     notifyUpdate();
   } catch {
     // ignore
   }
 }
 
+/**
+ * Privacy safe no-ops: Orders are NEVER persisted to device-wide browser localStorage.
+ * Every customer order lookup requires verified Order ID + Mobile Number verified server-side.
+ */
 export function loadSavedOrders(): SavedOrderRef[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(ORDERS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SavedOrderRef[]) : [];
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-export function saveOrderRef(order: Order): void {
-  if (typeof window === "undefined") return;
-  try {
-    const current = loadSavedOrders().filter((o) => o.id !== order.id);
-    const entry: SavedOrderRef = {
-      id: order.id,
-      createdAt: order.createdAt,
-      total: order.total,
-      status: order.status,
-      paymentMethod: order.paymentMethod,
-      paymentStatus: order.paymentStatus,
-      itemCount: order.items.reduce((sum, i) => sum + i.quantity, 0),
-      firstItemName: order.items[0]?.name || "EVOKA Order",
-      phone: order.phone.replace(/\D/g, "").slice(-10),
-    };
-    const next = [entry, ...current].slice(0, 20);
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(next));
-    notifyUpdate();
-  } catch {
-    // ignore
-  }
+export function saveOrderRef(_order: Order): void {
+  // Purposely no-op for customer privacy across shared devices & browsers
+  purgeDeviceOrderHistory();
 }
 
-export function syncSavedOrdersStatus(liveOrders: Order[]): void {
-  if (typeof window === "undefined" || liveOrders.length === 0) return;
-  try {
-    const current = loadSavedOrders();
-    const map = new Map(liveOrders.map((o) => [o.id, o]));
-    let changed = false;
-
-    const updated = current.map((ref) => {
-      const live = map.get(ref.id);
-      if (!live) return ref;
-      if (live.status !== ref.status || live.paymentStatus !== ref.paymentStatus) {
-        changed = true;
-        return { ...ref, status: live.status, paymentStatus: live.paymentStatus };
-      }
-      return ref;
-    });
-
-    // Also include any live orders not yet in local list
-    for (const live of liveOrders) {
-      if (!updated.some((u) => u.id === live.id)) {
-        changed = true;
-        updated.push({
-          id: live.id,
-          createdAt: live.createdAt,
-          total: live.total,
-          status: live.status,
-          paymentMethod: live.paymentMethod,
-          paymentStatus: live.paymentStatus,
-          itemCount: live.items.reduce((sum, i) => sum + i.quantity, 0),
-          firstItemName: live.items[0]?.name || "EVOKA Order",
-          phone: live.phone.replace(/\D/g, "").slice(-10),
-        });
-      }
-    }
-
-    if (changed) {
-      updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      localStorage.setItem(ORDERS_KEY, JSON.stringify(updated.slice(0, 20)));
-      notifyUpdate();
-    }
-  } catch {
-    // ignore
-  }
+export function syncSavedOrdersStatus(_liveOrders: Order[]): void {
+  // Purposely no-op for customer privacy across shared devices & browsers
+  purgeDeviceOrderHistory();
 }

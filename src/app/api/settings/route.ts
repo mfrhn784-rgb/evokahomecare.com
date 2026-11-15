@@ -31,3 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Failed to update settings." }, { status: 500 });
   }
 }
+
+export async function PUT(req: NextRequest) {
+  return POST(req);
+}

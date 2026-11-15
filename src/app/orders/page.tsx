@@ -27,7 +27,6 @@ function OrdersContent() {
   const initialId = searchParams.get("id") || "";
   const initialPhone = searchParams.get("phone") || "";
 
-  const [orderIdInput, setOrderIdInput] = useState(initialId);
   const [phoneInput, setPhoneInput] = useState(initialPhone);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,16 +41,11 @@ function OrdersContent() {
   const [editPincode, setEditPincode] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
-  const fetchOrders = async (idVal: string, phoneVal: string) => {
-    const cleanId = idVal.trim();
+  const fetchOrders = async (phoneVal: string, idVal?: string) => {
     const cleanPhone = phoneVal.replace(/\D/g, "");
 
-    if (!cleanId) {
-      setError("Please enter your Order ID.");
-      return;
-    }
     if (!cleanPhone || cleanPhone.length < 10) {
-      setError("Please enter the 10-digit mobile number used during checkout.");
+      setError("Please enter your 10-digit mobile number used during checkout.");
       return;
     }
 
@@ -61,13 +55,17 @@ function OrdersContent() {
     setSearched(true);
     try {
       const qs = new URLSearchParams();
-      qs.set("id", cleanId);
       qs.set("phone", cleanPhone);
+      if (idVal && idVal.trim()) {
+        qs.set("id", idVal.trim());
+      }
       const res = await fetch(`/api/orders?${qs.toString()}`);
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "No matching order found for this Order ID and mobile number.");
+        setError(data.error || "No orders found for this mobile number.");
         setOrders([]);
+      } else if (Array.isArray(data.orders)) {
+        setOrders(data.orders);
       } else if (data.order) {
         setOrders([data.order]);
       } else {
@@ -85,9 +83,9 @@ function OrdersContent() {
     // Purge any legacy shared device storage on visit
     purgeDeviceOrderHistory();
 
-    // Auto-fetch ONLY if both ID and phone are supplied in URL query params
-    if (initialId && initialPhone && initialPhone.replace(/\D/g, "").length >= 10) {
-      fetchOrders(initialId, initialPhone);
+    // Auto-fetch if phone is supplied in URL query params
+    if (initialPhone && initialPhone.replace(/\D/g, "").length >= 10) {
+      fetchOrders(initialPhone, initialId);
     }
   }, [initialId, initialPhone]);
 
@@ -164,55 +162,41 @@ function OrdersContent() {
             <PackageCheck className="w-6 h-6" />
           </div>
           <h1 className="font-editorial text-3xl sm:text-4xl font-bold text-emerald-deep">
-            Track &amp; Manage Your Order
+            Track &amp; Manage Your Orders
           </h1>
-          <p className="text-xs sm:text-sm text-slate-body font-medium">
-            Enter your Order ID and registered mobile number to securely view fulfillment status,
-            download invoices, or update delivery details.
+          <p className="text-xs sm:text-sm text-slate-body font-medium max-w-md mx-auto">
+            Enter your registered 10-digit mobile number to view all your order statuses, download tax invoices, or update delivery details.
           </p>
         </div>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            fetchOrders(orderIdInput, phoneInput);
+            fetchOrders(phoneInput);
           }}
-          className="glass-panel rounded-3xl border border-emerald-deep/10 p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-12 gap-3.5 print:hidden shadow-xs"
+          className="glass-panel rounded-3xl border border-emerald-deep/10 p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-3 print:hidden shadow-xs max-w-xl mx-auto"
         >
-          <div className="sm:col-span-5">
+          <div className="w-full flex-1">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-body mb-1">
-              Order ID *
-            </label>
-            <input
-              required
-              type="text"
-              value={orderIdInput}
-              onChange={(e) => setOrderIdInput(e.target.value)}
-              placeholder="e.g. EVK-123456-ABC"
-              className="w-full px-4 py-2.5 rounded-2xl bg-white border border-emerald-deep/15 text-xs sm:text-sm focus:outline-none focus:border-emerald-vibrant font-mono"
-            />
-          </div>
-          <div className="sm:col-span-4">
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-body mb-1">
-              Mobile Number *
+              Registered Mobile / WhatsApp Number *
             </label>
             <input
               required
               type="tel"
               value={phoneInput}
               onChange={(e) => setPhoneInput(e.target.value)}
-              placeholder="10-digit mobile number"
-              className="w-full px-4 py-2.5 rounded-2xl bg-white border border-emerald-deep/15 text-xs sm:text-sm focus:outline-none focus:border-emerald-vibrant"
+              placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
+              className="w-full px-4 py-3 rounded-2xl bg-white border border-emerald-deep/15 text-sm focus:outline-none focus:border-emerald-vibrant font-mono font-semibold"
             />
           </div>
-          <div className="sm:col-span-3 flex items-end">
+          <div className="w-full sm:w-auto sm:self-end">
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-5 rounded-full bg-emerald-deep text-pearl text-xs sm:text-sm font-bold hover:bg-emerald-vibrant transition-all inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+              className="w-full sm:w-auto py-3.5 px-6 rounded-full bg-emerald-deep text-pearl text-sm font-bold hover:bg-emerald-vibrant transition-all inline-flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 whitespace-nowrap"
             >
               <Search className="w-4 h-4" />
-              <span>{loading ? "Searching..." : "Track Order"}</span>
+              <span>{loading ? "Searching..." : "Track My Orders"}</span>
             </button>
           </div>
         </form>

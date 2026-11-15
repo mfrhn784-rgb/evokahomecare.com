@@ -39,37 +39,40 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ orders: allOrders });
   }
 
-  // --- Strict Customer Privacy Verification ---
-  // Non-admin customers MUST provide BOTH Order ID AND registered 10-digit mobile number!
-  if (!orderId || !phone || phone.length < 10) {
+  // --- Customer Phone Verification (No Order ID Required) ---
+  const cleanPhone = phone ? phone.replace(/\D/g, "").slice(-10) : "";
+  if (!cleanPhone || cleanPhone.length < 10) {
     return NextResponse.json(
-      { error: "Both Order ID and your registered 10-digit mobile number are required to view order status." },
+      { error: "Please enter your registered 10-digit mobile number to track your orders." },
       { status: 400 }
     );
   }
 
-  const order = await getOrderById(orderId);
+  const allOrders = await getOrders();
+  // Filter online orders matching this customer's 10-digit phone (offline sales excluded)
+  let matched = allOrders.filter(
+    (o) =>
+      o.channel !== "offline" &&
+      o.phone.replace(/\D/g, "").slice(-10) === cleanPhone
+  );
 
-  // Exclude offline counter sales from online customer portal
-  if (!order || order.channel === "offline") {
+  matched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  if (orderId) {
+    const specific = matched.find((o) => o.id.toLowerCase() === orderId.toLowerCase());
+    if (specific) {
+      return NextResponse.json({ order: specific, orders: matched });
+    }
+  }
+
+  if (matched.length === 0) {
     return NextResponse.json(
-      { error: "No matching order found for this Order ID and mobile number." },
+      { error: "No online orders found for this mobile number.", orders: [] },
       { status: 404 }
     );
   }
 
-  const cleanOrderPhone = order.phone.replace(/\D/g, "").slice(-10);
-  const cleanInputPhone = phone.slice(-10);
-
-  if (cleanOrderPhone !== cleanInputPhone) {
-    // Generic response prevents phone enumeration & unauthorized order probing
-    return NextResponse.json(
-      { error: "No matching order found for this Order ID and mobile number." },
-      { status: 404 }
-    );
-  }
-
-  return NextResponse.json({ order });
+  return NextResponse.json({ orders: matched, order: matched[0] });
 }
 
 export async function POST(req: NextRequest) {

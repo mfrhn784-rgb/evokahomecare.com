@@ -243,8 +243,8 @@ export default function AdminPage() {
     // Fetch coupons & store settings
     try {
       const [coupRes, setRes] = await Promise.all([
-        fetch("/api/admin/coupons"),
-        fetch("/api/admin/settings"),
+        fetch("/api/coupons"),
+        fetch("/api/settings"),
       ]);
       if (coupRes.ok) {
         const coupData = await coupRes.json();
@@ -252,8 +252,9 @@ export default function AdminPage() {
       }
       if (setRes.ok) {
         const setData = await setRes.json();
-        if (typeof setData.deliveryCharge === "number") {
-          setDeliveryCharge(setData.deliveryCharge);
+        const dc = setData.settings?.deliveryCharge ?? setData.deliveryCharge;
+        if (typeof dc === "number") {
+          setDeliveryCharge(dc);
         }
       }
     } catch {
@@ -267,7 +268,7 @@ export default function AdminPage() {
     let isMounted = true;
     (async () => {
       try {
-        const res = await fetch("/api/admin/session");
+        const res = await fetch("/api/admin/auth");
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated && isMounted) {
@@ -290,18 +291,18 @@ export default function AdminPage() {
     e.preventDefault();
     setAuthError("");
     try {
-      const res = await fetch("/api/admin/session", {
+      const res = await fetch("/api/admin/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin }),
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (res.ok && data.authenticated) {
         setUnlocked(true);
         setStatusMsg("✓ Admin console unlocked.");
         await fetchData();
       } else {
-        setAuthError(data.error || "Incorrect PIN");
+        setAuthError(data.error || "Incorrect Admin PIN");
       }
     } catch {
       setAuthError("Network error. Please try again.");
@@ -309,7 +310,7 @@ export default function AdminPage() {
   };
 
   const handleLogout = async () => {
-    await fetch("/api/admin/session", { method: "DELETE" });
+    await fetch("/api/admin/auth", { method: "DELETE" });
     setUnlocked(false);
     setPin("");
     setStatusMsg("");
@@ -456,7 +457,7 @@ export default function AdminPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/admin/upload-image", { method: "POST", body: fd });
+      const res = await fetch("/api/images/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok && data.url) {
         setNewProductImage(data.url);
@@ -478,7 +479,7 @@ export default function AdminPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/admin/upload-image", { method: "POST", body: fd });
+      const res = await fetch("/api/images/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok && data.url) {
         setEditingProduct((prev) => (prev ? { ...prev, image: data.url } : null));
@@ -556,8 +557,8 @@ export default function AdminPage() {
     setSavingDeliveryCharge(true);
     setStatusMsg("Saving delivery fee setting...");
     try {
-      const res = await fetch("/api/admin/settings", {
-        method: "PUT",
+      const res = await fetch("/api/settings", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deliveryCharge }),
       });
@@ -643,7 +644,7 @@ export default function AdminPage() {
         return changed ? { ...prod, variants: newVariants } : prod;
       });
 
-      const res = await fetch("/api/admin/bulk-rates", {
+      const res = await fetch("/api/products", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ products: updatedProducts }),
@@ -808,7 +809,7 @@ export default function AdminPage() {
     setSavingCoupon(true);
     setStatusMsg(`Saving coupon ${code}...`);
     try {
-      const res = await fetch("/api/admin/coupons", {
+      const res = await fetch("/api/coupons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -836,10 +837,16 @@ export default function AdminPage() {
 
   const handleToggleCoupon = async (c: PromoCoupon) => {
     try {
-      const res = await fetch("/api/admin/coupons", {
-        method: "PUT",
+      const res = await fetch("/api/coupons", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: c.code, active: !c.active }),
+        body: JSON.stringify({
+          code: c.code,
+          discountPercent: c.discountPercent,
+          minOrder: c.minOrder,
+          description: c.description,
+          active: !c.active,
+        }),
       });
       const data = await res.json();
       if (res.ok && data.coupons) {
@@ -854,7 +861,7 @@ export default function AdminPage() {
   const handleDeleteCoupon = async (code: string) => {
     if (!confirm(`Permanently delete coupon "${code}"?`)) return;
     try {
-      const res = await fetch(`/api/admin/coupons?code=${encodeURIComponent(code)}`, {
+      const res = await fetch(`/api/coupons?code=${encodeURIComponent(code)}`, {
         method: "DELETE",
       });
       const data = await res.json();
@@ -872,14 +879,16 @@ export default function AdminPage() {
     if (!file) return;
     setStatusMsg(`Uploading and parsing ${file.name}...`);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("mode", csvMode);
-      const res = await fetch("/api/admin/import-csv", { method: "POST", body: fd });
+      const csvText = await file.text();
+      const res = await fetch("/api/products/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csvText, mode: csvMode }),
+      });
       const data = await res.json();
       if (res.ok && data.products) {
         setProducts(data.products);
-        setStatusMsg(`✓ Import successful! ${data.message || `${data.products.length} products loaded.`}`);
+        setStatusMsg(`✓ Import successful! ${data.importedCount ?? data.products.length} products loaded.`);
       } else {
         setStatusMsg(data.error || "CSV Import failed.");
       }
@@ -899,7 +908,7 @@ export default function AdminPage() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("slug", productSlug);
-      const res = await fetch("/api/admin/upload-image", { method: "POST", body: fd });
+      const res = await fetch("/api/images/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok && data.url) {
         setProducts((prev) =>

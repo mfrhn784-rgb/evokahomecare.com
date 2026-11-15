@@ -15,7 +15,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const formData = await req.formData();
-    const files = formData.getAll("files") as File[];
+    const files = [
+      ...(formData.getAll("files") as File[]),
+      ...(formData.getAll("file") as File[]),
+    ];
     const productId = formData.get("productId") as string | null;
 
     if (!files || files.length === 0) {
@@ -67,6 +70,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       uploadedCount: savedPaths.length,
       savedPaths,
+      url: savedPaths[0],
       products: updatedProducts,
     });
   } catch {

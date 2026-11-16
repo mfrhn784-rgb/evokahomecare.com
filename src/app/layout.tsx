@@ -83,6 +83,9 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "https://evokahomecare.com",
   },
+  verification: {
+    google: "google15607361170c0aa2",
+  },
   other: {
     "geo.region": "IN-KL",
     "geo.placename": "Thiruvananthapuram",

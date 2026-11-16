@@ -1,0 +1,23 @@
+{
+  "name": "EVOKA Home & Personal Care",
+  "short_name": "EVOKA",
+  "description": "Everyday Clean, Elevated. Laundry detergents, dishwash, floor cleaners and personal care products crafted in Trivandrum, Kerala.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#107a57",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

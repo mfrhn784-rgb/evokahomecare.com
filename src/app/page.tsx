@@ -8,6 +8,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { HomeCategoryShelf } from "@/components/HomeCategoryShelf";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { SafeImage } from "@/components/SafeImage";
+import { HomeFaq } from "@/components/HomeFaq";
 
 export const dynamic = "force-dynamic";
 
@@ -321,6 +322,9 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* Frequently Asked Questions with FAQPage Schema */}
+      <HomeFaq />
     </div>
   );
 }

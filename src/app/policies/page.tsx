@@ -1,5 +1,15 @@
 import React from "react";
+import type { Metadata } from "next";
 import { BRAND } from "@/lib/brand";
+
+export const metadata: Metadata = {
+  title: "Store Policies, Shipping & Returns — EVOKA",
+  description:
+    "Learn about EVOKA shipping terms, free home delivery across Trivandrum, easy cancellation, returns, and privacy policies.",
+  alternates: {
+    canonical: "https://evokahomecare.com/policies",
+  },
+};
 
 export default function PoliciesPage() {
   return (

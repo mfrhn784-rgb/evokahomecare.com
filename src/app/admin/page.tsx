@@ -216,7 +216,11 @@ export default function AdminPage() {
   const [offlineSearch, setOfflineSearch] = useState<string>("");
 
   const fetchData = async () => {
-    const [ordRes, prodRes] = await Promise.all([fetch("/api/orders?admin=1"), fetch("/api/products")]);
+    const storedPin = typeof window !== "undefined" ? sessionStorage.getItem("evoka_admin_pin") || pin : pin;
+    const [ordRes, prodRes] = await Promise.all([
+      fetch("/api/orders?admin=1", { headers: storedPin ? { "x-admin-pin": storedPin } : {} }),
+      fetch("/api/products"),
+    ]);
     if (!ordRes.ok) return false;
     const ordData = await ordRes.json();
     const prodData = await prodRes.json();
@@ -298,6 +302,9 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (res.ok && data.authenticated) {
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("evoka_admin_pin", pin);
+        }
         setUnlocked(true);
         setStatusMsg("✓ Admin console unlocked.");
         await fetchData();
@@ -310,6 +317,9 @@ export default function AdminPage() {
   };
 
   const handleLogout = async () => {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("evoka_admin_pin");
+    }
     await fetch("/api/admin/auth", { method: "DELETE" });
     setUnlocked(false);
     setPin("");
@@ -323,15 +333,20 @@ export default function AdminPage() {
       paymentStatus?: PaymentStatus;
       courierName?: string;
       trackingNumber?: string;
-      adminAction?: "approve_payment" | "reject_payment" | "confirm_cod";
+      adminAction?: "approve_payment" | "reject_payment" | "confirm_cod" | "verify_payment" | "confirm" | string;
       paymentRejectedReason?: string;
+      reason?: string;
     }
   ) => {
     try {
+      const storedPin = typeof window !== "undefined" ? sessionStorage.getItem("evoka_admin_pin") || pin : pin;
       const res = await fetch("/api/orders", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: orderId, ...updates }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(storedPin ? { "x-admin-pin": storedPin } : {}),
+        },
+        body: JSON.stringify({ id: orderId, orderId, ...updates }),
       });
       const data = await res.json();
       if (res.ok && data.order) {
@@ -346,15 +361,17 @@ export default function AdminPage() {
   };
 
   const handleConfirmOrder = async (orderId: string) => {
-    await updateOrder(orderId, { status: "Confirmed" });
+    await updateOrder(orderId, { status: "Confirmed", adminAction: "confirm_cod" });
   };
 
   const handleGenerateInvoice = async (orderId: string) => {
     setGeneratingInvoiceId(orderId);
     setStatusMsg(`Generating official invoice for ${orderId}...`);
     try {
+      const storedPin = typeof window !== "undefined" ? sessionStorage.getItem("evoka_admin_pin") || pin : pin;
       const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/invoice`, {
         method: "POST",
+        headers: storedPin ? { "x-admin-pin": storedPin } : {},
       });
       const data = await res.json();
       if (res.ok && data.order) {
@@ -784,7 +801,11 @@ export default function AdminPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/orders?id=${encodeURIComponent(orderId)}`, { method: "DELETE" });
+      const storedPin = typeof window !== "undefined" ? sessionStorage.getItem("evoka_admin_pin") || pin : pin;
+      const res = await fetch(`/api/orders?id=${encodeURIComponent(orderId)}`, {
+        method: "DELETE",
+        headers: storedPin ? { "x-admin-pin": storedPin } : {},
+      });
       const data = await res.json();
       if (res.ok) {
         setOrders(data.orders || []);
@@ -1042,9 +1063,13 @@ export default function AdminPage() {
     setSubmittingPosOrder(true);
     setStatusMsg("Creating offline bill and deducting live inventory...");
     try {
+      const storedPin = typeof window !== "undefined" ? sessionStorage.getItem("evoka_admin_pin") || pin : pin;
       const res = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(storedPin ? { "x-admin-pin": storedPin } : {}),
+        },
         body: JSON.stringify({
           channel: "offline",
           customerName: posCustomerName.trim() || "Walk-in Customer",

@@ -450,7 +450,7 @@ function restoreStock(store: StoreData, order: Order) {
 export async function updateOrderByAdmin(
   orderId: string,
   updates: {
-    adminAction?: "verify_payment" | "reject_payment" | "confirm_cod";
+    adminAction?: "verify_payment" | "reject_payment" | "confirm_cod" | "approve_payment" | "confirm" | string;
     reason?: string;
     status?: Order["status"];
     paymentStatus?: PaymentStatus;
@@ -459,12 +459,17 @@ export async function updateOrderByAdmin(
   }
 ): Promise<Order | null> {
   const store = await readStore();
-  const order = store.orders.find((o) => o.id === orderId);
+  const cleanId = (orderId || "").trim().toLowerCase();
+  const order = store.orders.find(
+    (o) =>
+      o.id.trim().toLowerCase() === cleanId ||
+      (o.offlineBillNumber && o.offlineBillNumber.trim().toLowerCase() === cleanId)
+  );
   if (!order) return null;
 
   const wasCancelled = order.status === "Cancelled";
 
-  if (updates.adminAction === "verify_payment") {
+  if (updates.adminAction === "verify_payment" || updates.adminAction === "approve_payment") {
     order.paymentStatus = "PAID";
     order.paymentVerifiedAt = new Date().toISOString();
     order.paymentRejectedReason = undefined;
@@ -480,7 +485,7 @@ export async function updateOrderByAdmin(
     }
     order.status = "Cancelled";
     order.cancellationReason = order.paymentRejectedReason;
-  } else if (updates.adminAction === "confirm_cod") {
+  } else if (updates.adminAction === "confirm_cod" || updates.adminAction === "confirm") {
     if (order.status === "PENDING_CONFIRMATION" || order.status === "Pending") {
       order.status = "Confirmed";
     }

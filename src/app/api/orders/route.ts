@@ -287,9 +287,24 @@ export async function PATCH(req: NextRequest) {
     if (!verifyAdminSession(req)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const updated = await updateOrderByAdmin(body.orderId, {
-      adminAction: body.adminAction,
-      reason: body.reason,
+
+    const orderId = String(body.orderId || body.id || "").trim();
+    if (!orderId) {
+      return NextResponse.json({ error: "Missing order ID." }, { status: 400 });
+    }
+
+    const adminAction =
+      body.adminAction === "approve_payment"
+        ? "verify_payment"
+        : body.adminAction === "confirm"
+        ? "confirm_cod"
+        : body.adminAction;
+
+    const reason = body.reason || body.paymentRejectedReason;
+
+    const updated = await updateOrderByAdmin(orderId, {
+      adminAction,
+      reason,
       status: body.status,
       paymentStatus: body.paymentStatus,
       trackingNumber: body.trackingNumber,

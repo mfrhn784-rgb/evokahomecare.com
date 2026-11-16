@@ -31,7 +31,7 @@
           "label": "1L",
           "price": 189,
           "mrp": 249,
-          "stock": 47,
+          "stock": 44,
           "sku": "EVK-DETERGENT-MATIC-ROYAL-ROSE-1L",
           "image": "/images/detergent-matic-royal-rose-1l.jpg"
         },
@@ -2141,9 +2141,51 @@
       "subcategory": "Bath Soaps"
     }
   ],
-  "orders": [],
+  "orders": [
+    {
+      "id": "EVK-068753-2537FE",
+      "channel": "online",
+      "clientRequestId": "req-1794761057234-e1ig24",
+      "createdAt": "2026-11-15T16:44:28.753Z",
+      "customerName": "farhn Muhammed",
+      "phone": "57576455353",
+      "email": "",
+      "fulfillmentType": "delivery",
+      "address": {
+        "line1": "kk",
+        "landmark": "",
+        "city": "Thiruvananthapuram",
+        "state": "Kerala",
+        "pincode": "111111"
+      },
+      "items": [
+        {
+          "productId": "evk-matic-liquid-detergent-royal-rose",
+          "variantId": "v-matic-liquid-detergent-royal-rose-1l-1",
+          "name": "Matic Liquid Detergent - Royal Rose",
+          "variantLabel": "1L",
+          "price": 189,
+          "mrp": 249,
+          "image": "/images/detergent-matic-royal-rose-1l.jpg",
+          "slug": "matic-liquid-detergent-royal-rose",
+          "quantity": 3
+        }
+      ],
+      "subtotal": 567,
+      "discount": 0,
+      "shippingFee": 40,
+      "total": 607,
+      "paymentMethod": "cod",
+      "paymentStatus": "NOT_PAID",
+      "status": "PENDING_CONFIRMATION",
+      "updatedAt": "2026-11-16T03:10:21.957Z"
+    }
+  ],
   "users": [],
   "otps": [],
   "invoiceSeq": 1,
-  "coupons": []
+  "coupons": [],
+  "settings": {
+    "deliveryCharge": 40
+  }
 }
